@@ -1,0 +1,78 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-navy-50: #f2f6fb;
+  --color-navy-100: #e4ecf6;
+  --color-navy-200: #c3d5e9;
+  --color-navy-300: #92b2d6;
+  --color-navy-400: #5b88bd;
+  --color-navy-500: #3767a2;
+  --color-navy-600: #275186;
+  --color-navy-700: #1e406c;
+  --color-navy-800: #16304f;
+  --color-navy-900: #0b2545;
+  --color-navy-950: #071829;
+
+  --color-sea-50: #eefdfa;
+  --color-sea-100: #d3f8f1;
+  --color-sea-200: #abf0e6;
+  --color-sea-300: #71e2d6;
+  --color-sea-400: #38cbc0;
+  --color-sea-500: #1eafa7;
+  --color-sea-600: #158c88;
+  --color-sea-700: #16706e;
+  --color-sea-800: #175a59;
+  --color-sea-900: #174b4a;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-slate-100 text-slate-800 antialiased;
+    font-family: var(--font-sans);
+    overscroll-behavior-y: none;
+  }
+  /* Área segura para iPhone con notch */
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-top { padding-top: env(safe-area-inset-top); }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+  }
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800
+           placeholder:text-slate-400 focus:border-navy-500 focus:ring-2 focus:ring-navy-500/20 focus:outline-none
+           disabled:bg-slate-50 disabled:text-slate-400;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium tracking-wide text-slate-500 uppercase;
+  }
+  .btn, .btn-primary, .btn-secondary, .btn-accent, .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+           transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary { @apply bg-navy-900 text-white hover:bg-navy-800; }
+  .btn-secondary { @apply border border-slate-300 bg-white text-slate-700 hover:bg-slate-50; }
+  .btn-accent { @apply bg-sea-600 text-white hover:bg-sea-700; }
+  .btn-danger { @apply bg-red-600 text-white hover:bg-red-700; }
+  .btn-lg { @apply px-5 py-3.5 text-base; }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .th { @apply px-4 py-3 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase; }
+  .td { @apply px-4 py-3 text-sm text-slate-700; }
+}
+
+/* Scrollbar discreto en escritorio */
+@media (min-width: 768px) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { @apply rounded-full bg-slate-300; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+}
