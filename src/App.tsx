@@ -10,6 +10,8 @@ import {
   Auditoria, Clientes, Compras, Configuracion, Entregas, Finanzas, Inventario,
   Pedidos, Productos, Proveedores, Reportes, Trabajadores, Ventas,
 } from './pages/admin/Modules'
+import { Levantamiento } from './pages/admin/Levantamiento'
+import { Survey } from './pages/Survey'
 import { WorkerHome } from './pages/worker/WorkerHome'
 import { Avisos, MisEntregas, MisTareas, Perfil, Preparacion } from './pages/worker/WorkerPages'
 
@@ -26,6 +28,9 @@ export default function App() {
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
+
+            {/* Formulario público de levantamiento: el cliente entra con un enlace, sin cuenta */}
+            <Route path="/levantamiento/:token" element={<Survey />} />
 
             {/* INTERFAZ A · Administración (escritorio) */}
             <Route
@@ -51,6 +56,7 @@ export default function App() {
               <Route path="/finanzas" element={<Finanzas />} />
               <Route path="/reportes" element={<Reportes />} />
               <Route path="/trabajadores" element={<Trabajadores />} />
+              <Route path="/levantamiento" element={<Levantamiento />} />
               <Route path="/auditoria" element={<Auditoria />} />
               <Route path="/configuracion" element={<Configuracion />} />
             </Route>

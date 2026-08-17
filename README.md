@@ -61,6 +61,25 @@ truncate public.payments, public.deliveries, public.order_status_history,
 -- y luego, si corresponde, clientes/proveedores/productos de prueba
 ```
 
+## Levantamiento de información del cliente
+
+Antes de la Fase 2 hay que reemplazar los supuestos por datos reales. Para eso hay dos formatos
+con el mismo contenido (107 preguntas en 7 secciones):
+
+- **Planilla Excel** — [`docs/Levantamiento_Cliente_JLIZ.xlsx`](docs/Levantamiento_Cliente_JLIZ.xlsx),
+  con tres hojas extra para cargar productos, clientes y proveedores reales.
+- **Formulario web** — el administrador crea un enlace en *Levantamiento*, se lo envía al cliente
+  y este responde desde su teléfono sin cuenta ni contraseña. Cada respuesta se guarda sola.
+
+El formulario web se genera desde la planilla, así que ambos no se desalinean:
+
+```bash
+python3 scripts/survey_from_xlsx.py
+```
+
+El acceso anónimo está acotado a tres funciones (`survey_get`, `survey_save`, `survey_submit`)
+validadas por token; el resto del esquema sigue cerrado para usuarios sin sesión.
+
 ## Despliegue
 
 Cada push a `main` publica en GitHub Pages mediante `.github/workflows/deploy.yml`.

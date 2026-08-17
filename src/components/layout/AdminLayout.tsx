@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, Bell, Boxes, ClipboardList, Fish, LayoutDashboard, LogOut, Menu, Package,
+  BarChart3, Bell, Boxes, ClipboardCheck, ClipboardList, Fish, LayoutDashboard, LogOut, Menu, Package,
   Receipt, Search, Settings, ShieldCheck, ShoppingCart, Truck, Users, Wallet, X,
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -24,6 +24,7 @@ const NAV = [
   { to: '/finanzas', label: 'Finanzas', icon: Wallet },
   { to: '/reportes', label: 'Reportes', icon: BarChart3 },
   { to: '/trabajadores', label: 'Trabajadores', icon: Users },
+  { to: '/levantamiento', label: 'Levantamiento', icon: ClipboardCheck },
   { to: '/auditoria', label: 'Auditoría', icon: ShieldCheck },
   { to: '/configuracion', label: 'Configuración', icon: Settings },
 ]
