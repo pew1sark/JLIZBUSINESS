@@ -125,6 +125,11 @@ export interface Order {
   notes: string | null
   driver_id: string | null
   prepared_by: string | null
+  confirmed_at: string | null
+  prepared_at: string | null
+  delivered_at: string | null
+  invoice_number: string | null
+  invoice_status: 'pendiente' | 'emitida' | 'anulada'
   customers?: Pick<Customer, 'id' | 'name' | 'customer_type' | 'phone' | 'address' | 'comuna'>
 }
 

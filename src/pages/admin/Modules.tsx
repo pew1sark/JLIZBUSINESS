@@ -15,30 +15,6 @@ function Modulo({ title, subtitle, phase, children }: {
   )
 }
 
-export const Pedidos = () => (
-  <Modulo title="Pedidos" subtitle="Tablero Kanban por estado" phase="Fase 3">
-    Tablero con columnas Nuevos → Confirmados → Preparación → Listos → En reparto → Entregados →
-    Cancelados, con arrastre entre estados y detalle completo del pedido con línea de tiempo.
-    Las tablas <code>orders</code>, <code>order_items</code> y <code>order_status_history</code> y las funciones
-    <code> confirm_order()</code>, <code>start_preparation()</code>, <code>finish_preparation()</code> y
-    <code> dispatch_order()</code> ya están operativas en la base de datos.
-  </Modulo>
-)
-
-export const Ventas = () => (
-  <Modulo title="Ventas" subtitle="Punto de venta y facturación interna" phase="Fase 3">
-    Creación de ventas con selección de cliente, lista de precios asignada, productos por peso,
-    descuentos, transporte y estado de pago. La reserva de stock se dispara al confirmar.
-  </Modulo>
-)
-
-export const Clientes = () => (
-  <Modulo title="Clientes" subtitle="CRM, direcciones y cuenta corriente" phase="Fase 3">
-    Ficha con tipo de cliente, lista de precios asignada, direcciones de despacho, historial de compras,
-    frecuencia y saldo pendiente (vista <code>v_customer_balance</code>).
-  </Modulo>
-)
-
 export const Entregas = () => (
   <Modulo title="Entregas" subtitle="Rutas, repartidores y confirmación" phase="Fase 4">
     Asignación de pedidos a repartidores y rutas, seguimiento de estado y confirmación de entrega con

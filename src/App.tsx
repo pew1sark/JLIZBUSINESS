@@ -8,10 +8,10 @@ import { AdminLayout } from './components/layout/AdminLayout'
 import { WorkerLayout } from './components/layout/WorkerLayout'
 import { Login } from './pages/Login'
 const Dashboard = lazy(() => import('./pages/admin/Dashboard').then((m) => ({ default: m.Dashboard })))
-import {
-  Auditoria, Clientes, Configuracion, Entregas, Finanzas,
-  Pedidos, Reportes, Trabajadores, Ventas,
-} from './pages/admin/Modules'
+import { Auditoria, Configuracion, Entregas, Finanzas, Reportes, Trabajadores } from './pages/admin/Modules'
+const Pedidos = lazy(() => import('./pages/admin/Pedidos').then((m) => ({ default: m.Pedidos })))
+const Clientes = lazy(() => import('./pages/admin/Clientes').then((m) => ({ default: m.Clientes })))
+const Ventas = lazy(() => import('./pages/admin/Ventas').then((m) => ({ default: m.Ventas })))
 const Productos = lazy(() => import('./pages/admin/Productos').then((m) => ({ default: m.Productos })))
 const Inventario = lazy(() => import('./pages/admin/Inventario').then((m) => ({ default: m.Inventario })))
 const Compras = lazy(() => import('./pages/admin/Compras').then((m) => ({ default: m.Compras })))
