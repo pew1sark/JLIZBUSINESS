@@ -18,6 +18,7 @@ const Compras = lazy(() => import('./pages/admin/Compras').then((m) => ({ defaul
 const Proveedores = lazy(() => import('./pages/admin/Proveedores').then((m) => ({ default: m.Proveedores })))
 const Levantamiento = lazy(() => import('./pages/admin/Levantamiento').then((m) => ({ default: m.Levantamiento })))
 import { Survey } from './pages/Survey'
+const Catalogo = lazy(() => import('./pages/Catalogo').then((m) => ({ default: m.Catalogo })))
 import { WorkerHome } from './pages/worker/WorkerHome'
 import { Avisos, MisEntregas, MisTareas, Perfil, Preparacion } from './pages/worker/WorkerPages'
 
@@ -36,8 +37,9 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
 
-            {/* Formulario público de levantamiento: el cliente entra con un enlace, sin cuenta */}
+            {/* Formularios públicos: el cliente entra con un enlace, sin cuenta */}
             <Route path="/levantamiento/:token" element={<Survey />} />
+            <Route path="/catalogo/:token" element={<Catalogo />} />
 
             {/* INTERFAZ A · Administración (escritorio) */}
             <Route

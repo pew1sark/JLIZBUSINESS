@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Download, Link2, Plus, X } from 'lucide-react'
+import { Copy, Download, FileSpreadsheet, Link2, Plus, Upload, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { SURVEY, TOTAL_QUESTIONS } from '../../lib/survey'
 import { dateTime, relative } from '../../lib/format'
@@ -17,8 +17,8 @@ interface Session {
   submitted_at: string | null
 }
 
-const linkFor = (token: string) =>
-  `${window.location.origin}${import.meta.env.BASE_URL}#/levantamiento/${token}`
+const linkFor = (token: string, form: 'levantamiento' | 'catalogo' = 'levantamiento') =>
+  `${window.location.origin}${import.meta.env.BASE_URL}#/${form}/${token}`
 
 function newToken() {
   const bytes = new Uint8Array(16)
@@ -33,6 +33,9 @@ export function Levantamiento() {
   const [empresa, setEmpresa] = useState('')
   const [verId, setVerId] = useState<string | null>(null)
   const [copiado, setCopiado] = useState<string | null>(null)
+  const [resultado, setResultado] = useState<
+    { productos: number; clientes: number; proveedores: number; rendimientos: number; avisos: string[] } | null
+  >(null)
 
   const sesiones = useQuery({
     queryKey: ['survey-sessions'],
@@ -76,6 +79,21 @@ export function Levantamiento() {
     },
   })
 
+  const importar = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const { data, error } = await supabase.rpc('import_intake', { _session_id: sessionId })
+      if (error) throw error
+      return data as { productos: number; clientes: number; proveedores: number; rendimientos: number; avisos: string[] }
+    },
+    onSuccess: (r) => {
+      setResultado(r)
+      qc.invalidateQueries({ queryKey: ['intake-counts'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['stock'] })
+      qc.invalidateQueries({ queryKey: ['suppliers'] })
+    },
+  })
+
   const respuestas = useQuery({
     queryKey: ['survey-answers', verId],
     enabled: !!verId,
@@ -91,9 +109,9 @@ export function Levantamiento() {
     },
   })
 
-  function copiar(token: string) {
-    navigator.clipboard.writeText(linkFor(token))
-    setCopiado(token)
+  function copiar(token: string, form: 'levantamiento' | 'catalogo' = 'levantamiento') {
+    navigator.clipboard.writeText(linkFor(token, form))
+    setCopiado(token + form)
     setTimeout(() => setCopiado(null), 2000)
   }
 
@@ -152,7 +170,8 @@ export function Levantamiento() {
               <th className="th">Avance</th>
               <th className="th">Última actividad</th>
               <th className="th">Enviado</th>
-              <th className="th">Enlace</th>
+              <th className="th">Enlaces</th>
+              <th className="th">Datos cargados</th>
               <th className="th"></th>
             </tr>
           </thead>
@@ -185,13 +204,25 @@ export function Levantamiento() {
                     )}
                   </td>
                   <td className="td">
-                    <button
-                      onClick={() => copiar(s.token)}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-navy-600 hover:underline"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                      {copiado === s.token ? '¡Copiado!' : 'Copiar enlace'}
-                    </button>
+                    <div className="flex flex-col gap-1">
+                      <button
+                        onClick={() => copiar(s.token)}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-navy-600 hover:underline"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        {copiado === s.token + 'levantamiento' ? '¡Copiado!' : 'Preguntas'}
+                      </button>
+                      <button
+                        onClick={() => copiar(s.token, 'catalogo')}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-sea-700 hover:underline"
+                      >
+                        <FileSpreadsheet className="h-3.5 w-3.5" />
+                        {copiado === s.token + 'catalogo' ? '¡Copiado!' : 'Catálogo y costos'}
+                      </button>
+                    </div>
+                  </td>
+                  <td className="td">
+                    <Cargados sessionId={s.id} onImportar={() => importar.mutate(s.id)} importando={importar.isPending} />
                   </td>
                   <td className="td text-right">
                     <button onClick={() => setVerId(s.id)} className="btn-secondary px-3 py-1.5 text-xs">
@@ -234,6 +265,45 @@ export function Levantamiento() {
           {crear.isError && <ErrorState error={crear.error} />}
         </div>
       </Modal>
+
+      <Modal
+        open={!!resultado}
+        onClose={() => setResultado(null)}
+        title="Importación al sistema"
+        footer={<button onClick={() => setResultado(null)} className="btn-primary">Entendido</button>}
+      >
+        {resultado && (
+          <div className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                ['Productos', resultado.productos],
+                ['Clientes', resultado.clientes],
+                ['Proveedores', resultado.proveedores],
+                ['Rendimientos', resultado.rendimientos],
+              ] as [string, number][]).map(([k, v]) => (
+                <div key={k} className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">{k}</p>
+                  <p className="text-lg font-semibold text-slate-900">{v}</p>
+                </div>
+              ))}
+            </div>
+            {resultado.avisos?.length > 0 && (
+              <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+                <p className="mb-1 font-semibold">No se importaron:</p>
+                <ul className="list-disc space-y-0.5 pl-4">
+                  {resultado.avisos.map((a, i) => <li key={i}>{a}</li>)}
+                </ul>
+              </div>
+            )}
+            <p className="text-xs text-slate-500">
+              Las filas ya importadas quedan marcadas: si el cliente agrega más, puedes volver a
+              importar sin duplicar lo anterior.
+            </p>
+          </div>
+        )}
+      </Modal>
+
+      {importar.isError && <div className="mt-3"><ErrorState error={importar.error} /></div>}
 
       {verId && sesionVista && (
         <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40">
@@ -284,5 +354,43 @@ export function Levantamiento() {
         </div>
       )}
     </>
+  )
+}
+
+function Cargados({
+  sessionId, onImportar, importando,
+}: { sessionId: string; onImportar: () => void; importando: boolean }) {
+  const { data } = useQuery({
+    queryKey: ['intake-counts', sessionId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('intake_rows')
+        .select('kind, imported_at')
+        .eq('session_id', sessionId)
+      if (error) throw error
+      const filas = data as { kind: string; imported_at: string | null }[]
+      const porTipo: Record<string, number> = {}
+      let pendientes = 0
+      for (const f of filas) {
+        porTipo[f.kind] = (porTipo[f.kind] ?? 0) + 1
+        if (!f.imported_at) pendientes += 1
+      }
+      return { porTipo, pendientes, total: filas.length }
+    },
+  })
+
+  if (!data || data.total === 0) return <span className="text-xs text-slate-400">Sin datos aún</span>
+
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-slate-600">
+        {Object.entries(data.porTipo).map(([k, v]) => `${v} ${k}`).join(' · ')}
+      </p>
+      {data.pendientes > 0 && (
+        <button onClick={onImportar} disabled={importando} className="btn-accent px-2.5 py-1 text-xs">
+          <Upload className="h-3 w-3" /> Importar {data.pendientes}
+        </button>
+      )}
+    </div>
   )
 }
