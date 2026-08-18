@@ -32,36 +32,6 @@ export const Ventas = () => (
   </Modulo>
 )
 
-export const Inventario = () => (
-  <Modulo title="Inventario" subtitle="Stock por producto, lote y ubicación" phase="Fase 2">
-    Vista de stock físico / reservado / disponible por producto (vista <code>v_product_stock</code>),
-    detalle de lotes con vencimiento y ubicación, ajustes con <code>adjust_lot_quantity()</code> y
-    registro de mermas con <code>register_loss()</code>.
-  </Modulo>
-)
-
-export const Productos = () => (
-  <Modulo title="Productos" subtitle="Catálogo, especies y listas de precios" phase="Fase 2">
-    ABM de productos con especie, categoría, presentación, unidad base, stock mínimo, costo promedio
-    y precio por lista (público, restaurante, mayorista, distribuidor).
-  </Modulo>
-)
-
-export const Compras = () => (
-  <Modulo title="Compras" subtitle="Órdenes de compra y recepción" phase="Fase 2">
-    Registro de compra con proveedor, productos, kilos, precio por kg, flete y costos adicionales.
-    Al recibir, <code>receive_purchase()</code> crea los lotes, prorratea el flete para obtener el costo
-    real por kilo y genera los movimientos de inventario.
-  </Modulo>
-)
-
-export const Proveedores = () => (
-  <Modulo title="Proveedores" subtitle="Fichas, historial y precios comparados" phase="Fase 2">
-    Ficha con datos de contacto, evaluación, deuda y comparador de precios históricos por producto
-    (tabla <code>supplier_products</code>).
-  </Modulo>
-)
-
 export const Clientes = () => (
   <Modulo title="Clientes" subtitle="CRM, direcciones y cuenta corriente" phase="Fase 3">
     Ficha con tipo de cliente, lista de precios asignada, direcciones de despacho, historial de compras,

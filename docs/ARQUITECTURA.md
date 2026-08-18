@@ -3,7 +3,7 @@
 Sistema de gestión (ERP/POS) para distribuidora de pescado fresco.
 Documento base: decisiones, modelo de datos, permisos, flujos y plan por fases.
 
-Última actualización: 17 de agosto de 2026 · Fase 1 implementada.
+Última actualización: 18 de agosto de 2026 · Fases 1 y 2 implementadas, modelo ajustado al levantamiento.
 
 ---
 
@@ -236,7 +236,7 @@ El enrutamiento decide la interfaz según el rol: `admin` entra a `/`, el resto 
 | Fase | Contenido | Estado |
 |---|---|---|
 | 1 | Arquitectura, base de datos completa, RLS, auth, roles, dashboard, datos demo | ✅ **Hecha** |
-| 2 | Productos, inventario, lotes, compras, proveedores (UI) | ⬜ siguiente |
+| 2 | Productos, inventario, lotes, compras, proveedores, procesamiento (UI) | ✅ **Hecha** |
 | 3 | Clientes, ventas, pedidos + tablero Kanban | ⬜ |
 | 4 | Preparación, tareas de trabajadores, entregas y rutas | ⬜ |
 | 5 | Pagos, cuentas por cobrar, rentabilidad, reportes exportables | ⬜ |
@@ -271,3 +271,44 @@ demanda con IA sobre el historial de `inventory_movements` y `orders`.
 | **Bundle inicial ~925 KB** | Primera carga lenta en 3G | *Pendiente: code-splitting por ruta (Fase 7).* |
 | **Datos de demostración en la base** | Confusión con datos reales | Documentado; se eliminan con un script antes de operar en producción. |
 | **Backups en plan gratuito de Supabase** | Pérdida de datos | Evaluar plan Pro (backups diarios) antes de la puesta en marcha real. |
+
+---
+
+## 11. Ajustes tras el levantamiento con el cliente
+
+El 18 de agosto de 2026 el cliente (**Pescadería Bilagay SpA**, La Florida) respondió las 107
+preguntas. Ocho respuestas obligaron a cambiar el modelo; el resto confirmó lo construido.
+
+### Lo que cambió
+
+| Respuesta | Qué obligó a cambiar |
+|---|---|
+| **B4/B5** — compra entero y filetea en el terminal | Módulo nuevo de **procesamiento**: `processing_orders`, `processing_outputs`, `processing_yields` y la función `process_lot()`. Un lote entra, salen lotes nuevos con el costo del origen traspasado completo, y el rendimiento queda medido por par producto-origen → producto-salida. |
+| **A11** — compra y almacena en el terminal, más una cámara de 300 kg | Tabla `locations` (terminal, cámara, 3 vehículos) y `inventory_lots.location_id`. |
+| **B8/B9/B11** — el precio cambia por oferta y demanda, y se negocia caso a caso | Se abandonan las listas fijas por segmento: ahora hay **precio vigente por producto** con bitácora automática (`product_price_history`), **precio especial por cliente** (`customer_special_prices`) y la función `price_for()`. |
+| **E6** — se agrega hielo y se descuenta del peso | `order_items.gross_weight` y `ice_weight`; el peso facturable es el neto. |
+| **E2/A18** — se pesa con la balanza del local del cliente | `update_delivery_weights()`: el repartidor ajusta el peso en la entrega y el pedido se recalcula. |
+| **D9/G7** — nunca se vende lo que no hay | `confirm_order()` ahora **rechaza** el pedido si falta stock, en vez de reservar de forma parcial. |
+| **D11** — tolerancia de 5% | `finish_preparation()` avisa cuando la diferencia entre lo pedido y lo preparado la supera. |
+| **F6/F13** — hay un gerente de pagos y cobranza | Rol nuevo **`finanzas`** con permisos propios. |
+| **F8/F9** — factura con Bsale y quiere que el sistema la emita | Campos `invoice_number`, `invoice_status`, `invoice_url` en `orders`, preparados para la integración con Bsale (Fase 5). |
+
+### Parámetros reales cargados en `settings`
+
+IVA 19% sobre precios netos · crédito 30 días · vencido a los 35 · límite de crédito $10.000.000 ·
+corte de pedidos 01:30 · recepción 01:00–07:00 · reparto 09:00–14:00 · tolerancia de peso 5% ·
+descuento por volumen desde 40 kg · markup objetivo 50% · vida útil 3 días · merma en cámara 2%/día ·
+merma esperada 1,5% de la compra · costos fijos $9.000.000/mes · sin venta sin stock · sin cobro de
+despacho · el hielo se descuenta del peso.
+
+### Una decisión contable importante
+
+El desecho del fileteo **no se cuenta como pérdida económica**. Su costo ya está absorbido en el
+precio por kilo del producto procesado: si además se registrara como merma valorizada, el margen se
+castigaría dos veces por lo mismo. Se conserva el registro en kilos —sirve para medir rendimiento—
+con costo cero. Las mermas reales (producto que se bota, según la respuesta G4) sí se valorizan.
+
+### Lo que sigue pendiente de datos
+
+El cliente aún no entregó el catálogo real de productos, clientes y proveedores (las tres hojas de
+datos de la planilla). Hasta que lleguen, el sistema opera con los datos de demostración.

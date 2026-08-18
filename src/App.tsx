@@ -1,16 +1,22 @@
+import { Suspense, lazy } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Loader2 } from 'lucide-react'
 import { AuthProvider } from './context/AuthContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminLayout } from './components/layout/AdminLayout'
 import { WorkerLayout } from './components/layout/WorkerLayout'
 import { Login } from './pages/Login'
-import { Dashboard } from './pages/admin/Dashboard'
+const Dashboard = lazy(() => import('./pages/admin/Dashboard').then((m) => ({ default: m.Dashboard })))
 import {
-  Auditoria, Clientes, Compras, Configuracion, Entregas, Finanzas, Inventario,
-  Pedidos, Productos, Proveedores, Reportes, Trabajadores, Ventas,
+  Auditoria, Clientes, Configuracion, Entregas, Finanzas,
+  Pedidos, Reportes, Trabajadores, Ventas,
 } from './pages/admin/Modules'
-import { Levantamiento } from './pages/admin/Levantamiento'
+const Productos = lazy(() => import('./pages/admin/Productos').then((m) => ({ default: m.Productos })))
+const Inventario = lazy(() => import('./pages/admin/Inventario').then((m) => ({ default: m.Inventario })))
+const Compras = lazy(() => import('./pages/admin/Compras').then((m) => ({ default: m.Compras })))
+const Proveedores = lazy(() => import('./pages/admin/Proveedores').then((m) => ({ default: m.Proveedores })))
+const Levantamiento = lazy(() => import('./pages/admin/Levantamiento').then((m) => ({ default: m.Levantamiento })))
 import { Survey } from './pages/Survey'
 import { WorkerHome } from './pages/worker/WorkerHome'
 import { Avisos, MisEntregas, MisTareas, Perfil, Preparacion } from './pages/worker/WorkerPages'
@@ -26,6 +32,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <HashRouter>
         <AuthProvider>
+          <Suspense fallback={<PantallaCargando />}>
           <Routes>
             <Route path="/login" element={<Login />} />
 
@@ -79,8 +86,17 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </AuthProvider>
       </HashRouter>
     </QueryClientProvider>
+  )
+}
+
+function PantallaCargando() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-100">
+      <Loader2 className="h-6 w-6 animate-spin text-navy-500" />
+    </div>
   )
 }
