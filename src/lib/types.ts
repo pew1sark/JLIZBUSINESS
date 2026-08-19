@@ -1,7 +1,8 @@
 // Tipos del dominio. Reflejan el esquema de Postgres (public.*).
 // Para regenerarlos desde la base: supabase gen types typescript --project-id owfvuusxfvzjgxfmllpt
 
-export type AppRole = 'admin' | 'ventas' | 'compras' | 'inventario' | 'empaque' | 'reparto'
+export type AppRole =
+  | 'admin' | 'finanzas' | 'ventas' | 'compras' | 'inventario' | 'empaque' | 'reparto'
 export type EntityStatus = 'activo' | 'inactivo' | 'archivado'
 export type UnitMeasure = 'kg' | 'g' | 'unidad' | 'caja' | 'bandeja'
 export type OrderStatus =
@@ -18,6 +19,7 @@ export type CustomerType =
 export type MovementType =
   | 'entrada_compra' | 'ajuste_positivo' | 'salida_venta' | 'reserva'
   | 'liberacion_reserva' | 'merma' | 'ajuste_negativo' | 'devolucion' | 'traslado'
+  | 'proceso_consumo' | 'proceso_produccion'
 
 export interface Profile {
   id: string

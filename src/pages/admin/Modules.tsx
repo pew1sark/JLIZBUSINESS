@@ -36,13 +36,6 @@ export const Reportes = () => (
   </Modulo>
 )
 
-export const Trabajadores = () => (
-  <Modulo title="Trabajadores" subtitle="Usuarios, roles y permisos" phase="Fase 1 · en curso">
-    Alta de usuarios y asignación de rol sobre <code>profiles</code>, más edición de la matriz
-    <code> role_permissions</code>. Hoy el rol se asigna directamente en la base de datos.
-  </Modulo>
-)
-
 export const Auditoria = () => (
   <Modulo title="Auditoría" subtitle="Quién cambió qué y cuándo" phase="Fase 6">
     Consulta de <code>audit_logs</code>: cada INSERT/UPDATE/DELETE sobre pedidos, inventario, productos,
@@ -50,9 +43,3 @@ export const Auditoria = () => (
   </Modulo>
 )
 
-export const Configuracion = () => (
-  <Modulo title="Configuración" subtitle="Datos de la empresa y parámetros" phase="Fase 6">
-    Datos de la empresa, IVA, días de crédito por defecto, umbrales de alerta y política de stock
-    negativo (tabla <code>settings</code>).
-  </Modulo>
-)

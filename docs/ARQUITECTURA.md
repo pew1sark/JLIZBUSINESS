@@ -167,6 +167,13 @@ recepción y el trabajador que lo recibió. Y al revés: desde un lote se ve a q
 
 Siete roles: `admin`, `finanzas`, `ventas`, `compras`, `inventario`, `empaque`, `reparto`.
 
+**Control interno de cuentas.** Nadie se registra por su cuenta: el administrador crea el acceso
+en *Cuentas y accesos* indicando correo y rol, y solo ese correo puede completar el registro
+(`user_invitations` + el disparador `handle_new_user`). Desde la misma pantalla asigna roles,
+desactiva cuentas y edita la matriz de permisos. La base impide quedarse sin administrador
+activo y que alguien se desactive a sí mismo; todo cambio de rol, permiso o parámetro queda en
+`audit_logs`.
+
 **Separación de la información financiera.** RLS filtra filas, no columnas, así que el personal
 de terreno no lee las tablas que contienen valores (`products`, `orders`, `inventory_lots`,
 `payments`, `purchases`, `customers`). En su lugar trabajan sobre seis vistas operativas que

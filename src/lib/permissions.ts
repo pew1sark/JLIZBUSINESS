@@ -13,6 +13,14 @@ export type Resource =
 export type Action = 'read' | 'create' | 'update' | 'delete' | 'approve'
 
 const MATRIX: Record<Exclude<AppRole, 'admin'>, Partial<Record<Resource, Action[]>>> = {
+  finanzas: {
+    payments: ['read', 'create', 'update'],
+    orders: ['read'],
+    customers: ['read'],
+    suppliers: ['read'],
+    purchases: ['read'],
+    reports: ['read'],
+  },
   ventas: {
     customers: ['read', 'create', 'update'],
     orders: ['read', 'create', 'update'],
@@ -30,28 +38,20 @@ const MATRIX: Record<Exclude<AppRole, 'admin'>, Partial<Record<Resource, Action[
     inventory: ['read'],
     lots: ['read', 'create'],
   },
+  // Terreno: trabajan sobre vistas operativas sin valores, no sobre estas tablas.
   inventario: {
-    inventory: ['read', 'update'],
-    lots: ['read', 'create', 'update'],
-    products: ['read'],
-    losses: ['read', 'create'],
-    orders: ['read', 'update'],
-    purchases: ['read'],
-    movements: ['read', 'create'],
+    inventory: ['update'],
+    lots: ['create', 'update'],
+    losses: ['create'],
+    orders: ['update'],
+    movements: ['create'],
   },
   empaque: {
-    orders: ['read', 'update'],
-    products: ['read'],
-    inventory: ['read'],
-    lots: ['read'],
-    losses: ['read', 'create'],
+    orders: ['update'],
+    losses: ['create'],
   },
   reparto: {
-    deliveries: ['read', 'update'],
-    orders: ['read'],
-    customers: ['read'],
-    payments: ['create'],
-    routes: ['read'],
+    deliveries: ['update'],
   },
 }
 

@@ -5,6 +5,7 @@ import type {
 
 export const ROLE_LABEL: Record<AppRole, string> = {
   admin: 'Administrador',
+  finanzas: 'Finanzas',
   ventas: 'Ventas',
   compras: 'Compras',
   inventario: 'Bodega / Inventario',
@@ -93,6 +94,8 @@ export const MOVEMENT_LABEL: Record<MovementType, string> = {
   ajuste_negativo: 'Ajuste (−)',
   devolucion: 'Devolución',
   traslado: 'Traslado',
+  proceso_consumo: 'Entrada a proceso',
+  proceso_produccion: 'Producido en proceso',
 }
 
 export const LOSS_REASON_LABEL: Record<LossReason, string> = {
