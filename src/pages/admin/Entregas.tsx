@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowDown, ArrowUp, Check, MapPin, Package, Truck, UserRound,
+  ArrowDown, ArrowUp, Check, MapPin, Package, Route, Truck, UserRound, Wand2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { DeliveryStatus, Order, Profile } from '../../lib/types'
 import { DELIVERY_STATUS_LABEL } from '../../lib/constants'
 import { dateShort, kg, timeOnly } from '../../lib/format'
+import { Mapa, type PuntoMapa } from '../../components/Mapa'
+import { kilometrosRuta, ordenarPorCercania, urlRutaCompleta } from '../../lib/geo'
 import { Card, EmptyState, ErrorState, PageHeader, Skeleton, StatCard } from '../../components/ui'
 
 interface Entrega {
@@ -24,7 +26,10 @@ interface Entrega {
   orders: {
     code: string
     delivery_window: string | null
-    customers: { name: string; address: string | null; comuna: string | null } | null
+    customers: {
+      name: string; address: string | null; comuna: string | null
+      latitude: number | null; longitude: number | null
+    } | null
     order_items: { quantity_ordered: number; quantity_prepared: number | null }[]
   } | null
 }
@@ -40,6 +45,17 @@ const ESTILO: Record<DeliveryStatus, string> = {
 export function Entregas() {
   const qc = useQueryClient()
   const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10))
+
+  const empresa = useQuery({
+    queryKey: ['settings', 'empresa'],
+    staleTime: 10 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('settings').select('value').eq('key', 'empresa').maybeSingle()
+      if (error) throw error
+      return (data?.value ?? {}) as Record<string, string | number>
+    },
+  })
 
   const repartidores = useQuery({
     queryKey: ['drivers-all'],
@@ -61,7 +77,7 @@ export function Entregas() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('deliveries')
-        .select('*, orders(code, delivery_window, customers(name, address, comuna), order_items(quantity_ordered, quantity_prepared))')
+        .select('*, orders(code, delivery_window, customers(name, address, comuna, latitude, longitude), order_items(quantity_ordered, quantity_prepared))')
         .eq('scheduled_date', fecha)
         .order('sequence', { nullsFirst: false })
       if (error) throw error
@@ -119,12 +135,70 @@ export function Entregas() {
     return map
   }, [entregas.data])
 
+  const bodega = useMemo(() => {
+    const lat = Number(empresa.data?.bodega_lat)
+    const lng = Number(empresa.data?.bodega_lng)
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng, etiqueta: 'Bodega' } : null
+  }, [empresa.data])
+
+  const coordDe = (e: Entrega) =>
+    e.orders?.customers?.latitude != null && e.orders?.customers?.longitude != null
+      ? { lat: Number(e.orders.customers.latitude), lng: Number(e.orders.customers.longitude) }
+      : null
+
+  /** Reordena las paradas por cercanía desde la bodega y guarda la secuencia. */
+  function optimizar(lista: Entrega[]) {
+    if (!bodega) return
+    const conCoord = lista.filter((e) => coordDe(e))
+    const sinCoord = lista.filter((e) => !coordDe(e))
+    if (conCoord.length < 2) return
+
+    const ordenadas = ordenarPorCercania(
+      bodega,
+      conCoord.map((e) => ({ ...coordDe(e)!, entrega: e })),
+    )
+    ordenadas.forEach((o, i) => {
+      actualizar.mutate({ id: o.entrega.id, cambios: { sequence: i + 1 } })
+    })
+    sinCoord.forEach((e, i) => {
+      actualizar.mutate({ id: e.id, cambios: { sequence: ordenadas.length + i + 1 } })
+    })
+  }
+
   const kilos = (e: Entrega) =>
     (e.orders?.order_items ?? []).reduce(
       (n, i) => n + Number(i.quantity_prepared ?? i.quantity_ordered), 0,
     )
 
   const total = entregas.data ?? []
+
+  const conCoordRuta = (lista: Entrega[]) =>
+    lista.map((e) => coordDe(e)).filter((c): c is { lat: number; lng: number } => c !== null)
+
+  const puntosDia: PuntoMapa[] = total
+    .map((e, i) => {
+      const c = coordDe(e)
+      if (!c) return null
+      return {
+        id: e.id,
+        lat: c.lat,
+        lng: c.lng,
+        numero: e.sequence ?? i + 1,
+        color:
+          e.status === 'entregada' ? '#10b981'
+          : e.status === 'fallida' ? '#dc2626'
+          : e.status === 'en_camino' ? '#1eafa7'
+          : '#0b2545',
+        popup: (
+          <div className="text-sm">
+            <p className="font-semibold">{e.orders?.customers?.name}</p>
+            <p className="text-xs text-slate-500">{e.orders?.customers?.address}</p>
+            <p className="text-xs text-slate-500">{kg(kilos(e))} · {DELIVERY_STATUS_LABEL[e.status]}</p>
+          </div>
+        ),
+      } as PuntoMapa
+    })
+    .filter((p): p is PuntoMapa => p !== null)
   const entregadas = total.filter((e) => e.status === 'entregada').length
   const enCamino = total.filter((e) => e.status === 'en_camino').length
   const fallidas = total.filter((e) => e.status === 'fallida').length
@@ -206,6 +280,25 @@ export function Entregas() {
         </Card>
       )}
 
+      {puntosDia.length > 0 && (
+        <Card className="mt-4">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+            <h2 className="text-sm font-semibold text-slate-800">Mapa del reparto</h2>
+            <span className="text-xs text-slate-500">
+              {puntosDia.length} de {total.length} paradas ubicadas
+            </span>
+          </div>
+          <div className="p-4">
+            <Mapa puntos={puntosDia} alto={340} origen={bodega ?? undefined} />
+            {puntosDia.length < total.length && (
+              <p className="mt-2 text-xs text-amber-600">
+                Hay clientes sin ubicación. En Clientes, «Ubicar en el mapa» los agrega.
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
+
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         {[...porRepartidor.entries()].map(([driverId, lista]) => {
           const repartidor = repartidores.data?.find((r) => r.id === driverId)
@@ -224,8 +317,32 @@ export function Entregas() {
                     </p>
                     <p className="text-xs text-slate-500">
                       {lista.length} paradas · {kg(kilosRuta)} · {listas} entregadas
+                      {bodega && conCoordRuta(lista).length > 0 &&
+                        ` · ${kilometrosRuta(bodega, conCoordRuta(lista))} km`}
                     </p>
                   </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  {bodega && conCoordRuta(lista).length > 1 && (
+                    <>
+                      <button
+                        onClick={() => optimizar(lista)}
+                        title="Ordenar las paradas por cercanía desde la bodega"
+                        className="btn-secondary px-2.5 py-1.5 text-xs"
+                      >
+                        <Wand2 className="h-3.5 w-3.5" /> Optimizar
+                      </button>
+                      <a
+                        href={urlRutaCompleta(bodega, conCoordRuta(lista))}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Abrir la ruta completa en Google Maps"
+                        className="btn-secondary px-2.5 py-1.5 text-xs"
+                      >
+                        <Route className="h-3.5 w-3.5" />
+                      </a>
+                    </>
+                  )}
                 </div>
               </div>
 

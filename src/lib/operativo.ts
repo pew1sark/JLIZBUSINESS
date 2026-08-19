@@ -64,6 +64,8 @@ export interface ParadaRuta {
   whatsapp: string | null
   direccion: string | null
   comuna: string | null
+  latitude: number | null
+  longitude: number | null
   horario: string | null
   status: DeliveryStatus
   sequence: number | null

@@ -1,8 +1,10 @@
-import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Loader2, MapPin, MessageCircle, Navigation, Phone, Truck, X } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { Check, Loader2, Map, MessageCircle, Navigation, Phone, Route, Truck, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { abrirMapa, useHojaRuta, type ParadaRuta } from '../../lib/operativo'
+import { useHojaRuta, type ParadaRuta } from '../../lib/operativo'
+import { Mapa, type PuntoMapa } from '../../components/Mapa'
+import { kilometrosRuta, urlMapaNativo, urlRutaCompleta, urlWaze } from '../../lib/geo'
 import { DELIVERY_STATUS_LABEL } from '../../lib/constants'
 import { kg, timeOnly } from '../../lib/format'
 import { Card, EmptyState, ErrorState, Modal, Skeleton } from '../../components/ui'
@@ -27,6 +29,17 @@ export function WorkerRuta() {
     qc.invalidateQueries({ queryKey: ['op-pedidos'] })
   }
 
+  const empresa = useQuery({
+    queryKey: ['settings', 'empresa'],
+    staleTime: 10 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('settings').select('value').eq('key', 'empresa').maybeSingle()
+      if (error) throw error
+      return (data?.value ?? {}) as Record<string, string | number>
+    },
+  })
+
   const enCamino = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.rpc('start_delivery', { _delivery_id: id })
@@ -35,10 +48,35 @@ export function WorkerRuta() {
     onSuccess: refrescar,
   })
 
+  const bodega = useMemo(() => {
+    const lat = Number(empresa.data?.bodega_lat)
+    const lng = Number(empresa.data?.bodega_lng)
+    return Number.isFinite(lat) && Number.isFinite(lng)
+      ? { lat, lng, etiqueta: 'Bodega' }
+      : null
+  }, [empresa.data])
+
   const paradas = ruta.data ?? []
   const pendientes = paradas.filter((p) => p.status !== 'entregada' && p.status !== 'fallida')
   const cerradas = paradas.filter((p) => p.status === 'entregada' || p.status === 'fallida')
   const kilos = pendientes.reduce((n, p) => n + Number(p.total_kilos), 0)
+
+  const conCoordenadas = pendientes.filter((p) => p.latitude != null && p.longitude != null)
+
+  const puntosRuta: PuntoMapa[] = conCoordenadas.map((p, i) => ({
+    id: p.delivery_id,
+    lat: Number(p.latitude),
+    lng: Number(p.longitude),
+    numero: p.sequence ?? i + 1,
+    color: p.status === 'en_camino' ? '#1eafa7' : '#0b2545',
+    popup: (
+      <div className="text-sm">
+        <p className="font-semibold">{p.cliente}</p>
+        <p className="text-xs text-slate-500">{p.direccion}</p>
+        <p className="text-xs text-slate-500">{kg(p.total_kilos)}</p>
+      </div>
+    ),
+  }))
 
   return (
     <>
@@ -46,6 +84,33 @@ export function WorkerRuta() {
       <p className="mb-4 text-sm text-slate-500">
         {pendientes.length} entrega(s) pendientes · {kg(kilos)} por repartir
       </p>
+
+      {conCoordenadas.length > 0 && (
+        <div className="mb-4">
+          <Mapa
+            puntos={puntosRuta}
+            alto={260}
+            ruta
+            origen={bodega ?? undefined}
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-500">
+              {conCoordenadas.length} parada(s) en el mapa
+              {bodega && ` · ${kilometrosRuta(bodega, conCoordenadas.map((p) => ({ lat: Number(p.latitude), lng: Number(p.longitude) })))} km aprox.`}
+            </span>
+            {bodega && (
+              <a
+                href={urlRutaCompleta(bodega, conCoordenadas.map((p) => ({ lat: Number(p.latitude), lng: Number(p.longitude) })))}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-secondary ml-auto px-3 py-1.5 text-xs"
+              >
+                <Route className="h-3.5 w-3.5" /> Abrir ruta completa
+              </a>
+            )}
+          </div>
+        </div>
+      )}
 
       {ruta.isError && <ErrorState error={ruta.error} />}
       {ruta.isLoading && <Skeleton className="h-48" />}
@@ -79,7 +144,7 @@ export function WorkerRuta() {
                 <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">{p.notes}</p>
               )}
 
-              <div className="mt-3 grid grid-cols-3 gap-2">
+              <div className="mt-3 grid grid-cols-4 gap-2">
                 <a
                   href={p.telefono ? `tel:${p.telefono}` : undefined}
                   className="btn-secondary justify-center py-2.5 text-xs"
@@ -94,12 +159,22 @@ export function WorkerRuta() {
                 >
                   <MessageCircle className="h-4 w-4" /> WhatsApp
                 </a>
-                <button
-                  onClick={() => p.direccion && abrirMapa(p.direccion, p.comuna)}
+                <a
+                  href={coordDe(p) ? urlWaze(coordDe(p)!) : urlMapaNativo(null, p.direccion, p.comuna)}
+                  target="_blank"
+                  rel="noreferrer"
                   className="btn-secondary justify-center py-2.5 text-xs"
                 >
-                  <MapPin className="h-4 w-4" /> Mapa
-                </button>
+                  <Navigation className="h-4 w-4" /> Waze
+                </a>
+                <a
+                  href={urlMapaNativo(coordDe(p), p.direccion, p.comuna)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-secondary justify-center py-2.5 text-xs"
+                >
+                  <Map className="h-4 w-4" /> Maps
+                </a>
               </div>
             </div>
 
@@ -284,4 +359,10 @@ function FallidaModal({
       </div>
     </Modal>
   )
+}
+
+function coordDe(p: ParadaRuta) {
+  return p.latitude != null && p.longitude != null
+    ? { lat: Number(p.latitude), lng: Number(p.longitude) }
+    : null
 }

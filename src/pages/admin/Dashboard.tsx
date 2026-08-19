@@ -1,19 +1,39 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import {
-  AlertTriangle, Boxes, ClipboardList, Package, TrendingUp, Truck, Wallet,
+  AlertTriangle, Boxes, ClipboardList, MapPin, Package, TrendingUp, Truck, Wallet,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { Mapa, type PuntoMapa } from '../../components/Mapa'
+import { CUSTOMER_TYPE_LABEL } from '../../lib/constants'
+import type { CustomerType } from '../../lib/types'
 import type { DashboardKpis, OrderStatus, ProductStock } from '../../lib/types'
 import { dateShort, kg, money, moneyShort, relative } from '../../lib/format'
 import { ORDER_STATUS_LABEL, ORDER_STATUS_STYLE } from '../../lib/constants'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton, StatCard } from '../../components/ui'
 
 interface SeriePunto { dia: string; ventas: number; compras: number; margen: number }
+
+interface ClienteMapa {
+  id: string
+  name: string
+  customer_type: CustomerType
+  address: string | null
+  comuna: string | null
+  latitude: number | null
+  longitude: number | null
+  status: string
+  orders_count: number
+  total_invoiced: number
+  balance_due: number
+  overdue: number
+  last_order_at: string | null
+}
 
 interface ActividadItem {
   id: string
@@ -77,6 +97,29 @@ export function Dashboard() {
     },
   })
 
+  const clientesMapa = useQuery({
+    queryKey: ['clientes-mapa'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_clientes_mapa')
+        .select('*')
+        .eq('status', 'activo')
+      if (error) throw error
+      return data as ClienteMapa[]
+    },
+  })
+
+  const empresa = useQuery({
+    queryKey: ['settings', 'empresa'],
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('settings').select('value').eq('key', 'empresa').maybeSingle()
+      if (error) throw error
+      return (data?.value ?? {}) as Record<string, string | number>
+    },
+  })
+
   const topProductos = useQuery({
     queryKey: ['top-productos'],
     queryFn: async () => {
@@ -99,6 +142,51 @@ export function Dashboard() {
       return [...acc.values()].sort((a, b) => b.monto - a.monto).slice(0, 7)
     },
   })
+
+  const ubicados = useMemo(
+    () => (clientesMapa.data ?? []).filter((c) => c.latitude != null && c.longitude != null),
+    [clientesMapa.data],
+  )
+
+  const puntosClientes = useMemo<PuntoMapa[]>(
+    () =>
+      ubicados.map((c) => ({
+        id: c.id,
+        lat: Number(c.latitude),
+        lng: Number(c.longitude),
+        color: Number(c.overdue) > 0 ? '#dc2626' : Number(c.balance_due) > 0 ? '#f59e0b' : '#10b981',
+        popup: (
+          <div className="min-w-44 text-sm">
+            <p className="font-semibold text-slate-900">{c.name}</p>
+            <p className="text-xs text-slate-500">{c.address}</p>
+            <p className="mt-1 text-xs text-slate-600">
+              {c.orders_count} pedidos · {moneyShort(c.total_invoiced)}
+            </p>
+            {Number(c.balance_due) > 0 && (
+              <p className="text-xs font-medium text-amber-600">
+                {moneyShort(c.balance_due)} por cobrar
+              </p>
+            )}
+            <a href={`#/clientes/${c.id}`} className="mt-1 block text-xs font-medium text-navy-700 underline">
+              Ver ficha completa
+            </a>
+          </div>
+        ),
+      })),
+    [ubicados],
+  )
+
+  const porTipo = useMemo(() => {
+    const acc = new Map<string, { n: number; monto: number; deuda: number }>()
+    for (const c of clientesMapa.data ?? []) {
+      const prev = acc.get(c.customer_type) ?? { n: 0, monto: 0, deuda: 0 }
+      prev.n += 1
+      prev.monto += Number(c.total_invoiced ?? 0)
+      prev.deuda += Number(c.balance_due ?? 0)
+      acc.set(c.customer_type, prev)
+    }
+    return [...acc.entries()].sort((a, b) => b[1].monto - a[1].monto)
+  }, [clientesMapa.data])
 
   const k = kpis.data
   const bajos = (stock.data ?? []).filter((p) => p.min_stock > 0 && p.available < p.min_stock)
@@ -178,6 +266,82 @@ export function Dashboard() {
                 </div>
               </Link>
             ))}
+          </div>
+        </Card>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <CardHeader
+            title="Dónde están los clientes"
+            action={
+              <Link to="/clientes" className="text-xs font-medium text-navy-600 hover:underline">
+                Ver cartera
+              </Link>
+            }
+          />
+          <div className="p-4">
+            {clientesMapa.isLoading ? (
+              <Skeleton className="h-[380px] w-full" />
+            ) : ubicados.length === 0 ? (
+              <div className="flex h-[380px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 text-center">
+                <MapPin className="mb-2 h-8 w-8 text-slate-300" />
+                <p className="text-sm font-medium text-slate-600">Ningún cliente tiene ubicación todavía</p>
+                <p className="mt-1 max-w-xs text-xs text-slate-400">
+                  En Clientes, el botón «Ubicar en el mapa» busca la dirección de cada uno y guarda su
+                  posición. Después el repartidor navega directo desde su hoja de ruta.
+                </p>
+                <Link to="/clientes" className="btn-secondary mt-3">Ir a clientes</Link>
+              </div>
+            ) : (
+              <>
+                <Mapa
+                  puntos={puntosClientes}
+                  alto={380}
+                  origen={
+                    empresa.data?.bodega_lat
+                      ? {
+                          lat: Number(empresa.data.bodega_lat),
+                          lng: Number(empresa.data.bodega_lng),
+                          etiqueta: String(empresa.data.nombre ?? 'Bodega'),
+                        }
+                      : undefined
+                  }
+                />
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                  <span><strong className="text-slate-800">{ubicados.length}</strong> de {(clientesMapa.data ?? []).length} clientes ubicados</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" /> al día</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> con saldo</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" /> vencido</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-sea-500" /> bodega</span>
+                </div>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Cartera por tipo" />
+          <div className="divide-y divide-slate-50">
+            {porTipo.map(([tipo, datos]) => (
+              <div key={tipo} className="flex items-center justify-between px-4 py-2.5">
+                <div>
+                  <p className="text-sm font-medium text-slate-800">
+                    {CUSTOMER_TYPE_LABEL[tipo as CustomerType] ?? tipo}
+                  </p>
+                  <p className="text-xs text-slate-400">{datos.n} cliente(s)</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-medium tabular-nums text-slate-700">{moneyShort(datos.monto)}</p>
+                  {datos.deuda > 0 && (
+                    <p className="text-xs text-amber-600">{moneyShort(datos.deuda)} por cobrar</p>
+                  )}
+                </div>
+              </div>
+            ))}
+            {porTipo.length === 0 && (
+              <p className="px-4 py-8 text-center text-sm text-slate-400">Sin clientes activos</p>
+            )}
           </div>
         </Card>
       </div>

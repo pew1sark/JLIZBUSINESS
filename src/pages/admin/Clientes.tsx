@@ -1,13 +1,12 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MessageCircle, Pencil, Phone, Plus, Search, X } from 'lucide-react'
+import { MapPin, MessageCircle, Pencil, Phone, Plus, Search } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import type { Customer, CustomerType, Order } from '../../lib/types'
-import {
-  CUSTOMER_TYPE_LABEL, ORDER_STATUS_LABEL, ORDER_STATUS_STYLE,
-  PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE,
-} from '../../lib/constants'
-import { dateShort, money, moneyShort, relative } from '../../lib/format'
+import { geocodificarLista } from '../../lib/geo'
+import type { Customer, CustomerType } from '../../lib/types'
+import { CUSTOMER_TYPE_LABEL } from '../../lib/constants'
+import { money, moneyShort, relative } from '../../lib/format'
 import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
 
 interface Balance {
@@ -48,7 +47,27 @@ export function Clientes() {
   const qc = useQueryClient()
   const [busca, setBusca] = useState('')
   const [form, setForm] = useState<Form | null>(null)
-  const [verId, setVerId] = useState<string | null>(null)
+  const [ubicando, setUbicando] = useState<{ hecho: number; total: number } | null>(null)
+
+  async function ubicarTodos(lista: Customer[]) {
+    const faltan = lista.filter((c) => c.latitude == null && c.address)
+    if (!faltan.length) return
+    setUbicando({ hecho: 0, total: faltan.length })
+    await geocodificarLista(
+      faltan.map((c) => ({ id: c.id, address: c.address, comuna: c.comuna })),
+      async (hecho, total, item, r) => {
+        setUbicando({ hecho, total })
+        if (r) {
+          await supabase.rpc('set_customer_location', {
+            _customer_id: item.id, _lat: r.lat, _lng: r.lng, _source: 'nominatim',
+          })
+        }
+      },
+    )
+    setUbicando(null)
+    qc.invalidateQueries({ queryKey: ['customers'] })
+    qc.invalidateQueries({ queryKey: ['clientes-mapa'] })
+  }
 
   const clientes = useQuery({
     queryKey: ['customers'],
@@ -67,21 +86,6 @@ export function Clientes() {
       const map: Record<string, Balance> = {}
       for (const b of data as Balance[]) map[b.customer_id] = b
       return map
-    },
-  })
-
-  const pedidosCliente = useQuery({
-    queryKey: ['customer-orders', verId],
-    enabled: !!verId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id, code, status, order_date, total, amount_paid, payment_status')
-        .eq('customer_id', verId)
-        .order('order_date', { ascending: false })
-        .limit(20)
-      if (error) throw error
-      return data as Order[]
     },
   })
 
@@ -131,8 +135,6 @@ export function Clientes() {
     }
   }, [balances.data])
 
-  const cliente = clientes.data?.find((c) => c.id === verId)
-  const balance = verId ? balances.data?.[verId] : undefined
 
   function editar(c: Customer) {
     setForm({
@@ -155,6 +157,15 @@ export function Clientes() {
               <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400" />
               <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar…" className="input w-52 pl-9" />
             </div>
+            <button
+              onClick={() => ubicarTodos(clientes.data ?? [])}
+              disabled={!!ubicando}
+              className="btn-secondary"
+              title="Busca la dirección de cada cliente y guarda su ubicación"
+            >
+              <MapPin className="h-4 w-4" />
+              {ubicando ? `Ubicando ${ubicando.hecho}/${ubicando.total}…` : 'Ubicar en el mapa'}
+            </button>
             <button onClick={() => setForm(vacio)} className="btn-primary">
               <Plus className="h-4 w-4" /> Nuevo cliente
             </button>
@@ -197,10 +208,13 @@ export function Clientes() {
                 return (
                   <tr key={c.id} className="hover:bg-slate-50">
                     <td className="td">
-                      <button onClick={() => setVerId(c.id)} className="text-left">
+                      <Link to={`/clientes/${c.id}`} className="block">
                         <p className="font-medium text-navy-800 hover:underline">{c.name}</p>
-                        <p className="text-xs text-slate-400">{c.comuna ?? '—'}</p>
-                      </button>
+                        <p className="text-xs text-slate-400">
+                          {c.comuna ?? '—'}
+                          {c.latitude == null && <span className="ml-1 text-amber-600">· sin ubicación</span>}
+                        </p>
+                      </Link>
                     </td>
                     <td className="td">
                       <span className="badge bg-slate-100 text-slate-600">
@@ -296,73 +310,7 @@ export function Clientes() {
         )}
       </Modal>
 
-      {verId && cliente && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={() => setVerId(null)}>
-          <div className="flex h-full w-full max-w-xl flex-col bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900">{cliente.name}</h3>
-                <p className="text-xs text-slate-500">
-                  {CUSTOMER_TYPE_LABEL[cliente.customer_type]} · {cliente.comuna ?? ''}
-                </p>
-              </div>
-              <button onClick={() => setVerId(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <StatCard label="Comprado" value={moneyShort(balance?.total_invoiced ?? 0)} />
-                <StatCard label="Pagado" value={moneyShort(balance?.total_paid ?? 0)} />
-                <StatCard label="Pendiente" value={moneyShort(balance?.balance_due ?? 0)} tone={(balance?.balance_due ?? 0) > 0 ? 'warning' : 'default'} />
-                <StatCard label="Vencido" value={moneyShort(balance?.overdue ?? 0)} tone={(balance?.overdue ?? 0) > 0 ? 'danger' : 'default'} />
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <Dato k="Quién pide" v={cliente.contact_name} />
-                <Dato k="Teléfono" v={cliente.phone} />
-                <Dato k="Dirección" v={cliente.address} />
-                <Dato k="Condición" v={`${cliente.payment_terms_days} días · tope ${money(cliente.credit_limit)}`} />
-              </div>
-
-              <h4 className="mt-5 mb-2 text-xs font-semibold tracking-wide text-navy-700 uppercase">
-                Últimos pedidos
-              </h4>
-              {pedidosCliente.isLoading && <Skeleton className="h-24" />}
-              {pedidosCliente.data?.length === 0 && (
-                <p className="text-sm text-slate-400">Todavía no tiene pedidos registrados.</p>
-              )}
-              <div className="space-y-1.5">
-                {pedidosCliente.data?.map((o) => (
-                  <div key={o.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-                    <div>
-                      <p className="font-mono text-xs text-slate-500">{o.code}</p>
-                      <p className="text-xs text-slate-400">{dateShort(o.order_date)}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`badge ${ORDER_STATUS_STYLE[o.status]}`}>{ORDER_STATUS_LABEL[o.status]}</span>
-                      <span className={`badge ${PAYMENT_STATUS_STYLE[o.payment_status]}`}>
-                        {PAYMENT_STATUS_LABEL[o.payment_status]}
-                      </span>
-                      <span className="w-20 text-right text-sm font-medium tabular-nums">{moneyShort(o.total)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }
 
-function Dato({ k, v }: { k: string; v: string | null }) {
-  return (
-    <div>
-      <p className="text-xs text-slate-400">{k}</p>
-      <p className="text-slate-800">{v || '—'}</p>
-    </div>
-  )
-}

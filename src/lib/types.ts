@@ -86,6 +86,9 @@ export interface Customer {
   credit_limit: number
   payment_terms_days: number
   status: EntityStatus
+  latitude: number | null
+  longitude: number | null
+  geocoded_at: string | null
   created_at: string
 }
 
