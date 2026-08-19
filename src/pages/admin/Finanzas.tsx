@@ -27,7 +27,9 @@ interface Kpis {
 }
 
 interface Cobrar {
-  order_id: string
+  origen: 'pedido' | 'saldo_inicial'
+  ref_id: string
+  order_id: string | null
   code: string
   cliente: string
   whatsapp: string | null
@@ -42,10 +44,12 @@ interface Cobrar {
 }
 
 interface Pagar {
-  purchase_id: string
+  origen: 'compra' | 'saldo_inicial'
+  ref_id: string
+  purchase_id: string | null
   code: string
   proveedor: string
-  purchase_date: string
+  issued_at: string
   saldo: number
   total: number
   dias_atraso: number
@@ -216,10 +220,13 @@ export function Finanzas() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {porCobrar.data.map((c) => (
-                  <tr key={c.order_id} className="hover:bg-slate-50">
+                  <tr key={c.ref_id} className="hover:bg-slate-50">
                     <td className="td font-medium text-slate-900">{c.cliente}</td>
                     <td className="td">
                       <p className="font-mono text-xs">{c.code}</p>
+                      {c.origen === 'saldo_inicial' && (
+                        <span className="badge bg-slate-100 text-slate-500">saldo anterior</span>
+                      )}
                       {c.invoice_number && <p className="text-xs text-slate-400">factura {c.invoice_number}</p>}
                     </td>
                     <td className="td text-slate-500">{dateShort(c.due_date)}</td>
@@ -279,10 +286,15 @@ export function Finanzas() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {porPagar.data.map((p) => (
-                  <tr key={p.purchase_id} className="hover:bg-slate-50">
+                  <tr key={p.ref_id} className="hover:bg-slate-50">
                     <td className="td font-medium text-slate-900">{p.proveedor}</td>
-                    <td className="td font-mono text-xs">{p.code}</td>
-                    <td className="td text-slate-500">{dateShort(p.purchase_date)}</td>
+                    <td className="td">
+                      <p className="font-mono text-xs">{p.code}</p>
+                      {p.origen === 'saldo_inicial' && (
+                        <span className="badge bg-slate-100 text-slate-500">saldo anterior</span>
+                      )}
+                    </td>
+                    <td className="td text-slate-500">{dateShort(p.issued_at)}</td>
                     <td className="td tabular-nums text-slate-500">{money(p.total)}</td>
                     <td className="td tabular-nums font-medium">{money(p.saldo)}</td>
                     <td className="td">
@@ -444,15 +456,12 @@ function CobroModal({
 
   const guardar = useMutation({
     mutationFn: async () => {
-      const { data: orden } = await supabase
-        .from('orders').select('customer_id').eq('id', cobrar!.order_id).single()
-      const { error } = await supabase.from('payments').insert({
-        direction: 'cobro',
-        order_id: cobrar!.order_id,
-        customer_id: orden?.customer_id,
-        amount: Number(monto) || cobrar!.saldo,
-        method: metodo,
-        reference: referencia.trim() || null,
+      const { error } = await supabase.rpc('register_collection', {
+        _origen: cobrar!.origen,
+        _ref_id: cobrar!.ref_id,
+        _amount: Number(monto) || cobrar!.saldo,
+        _method: metodo,
+        _reference: referencia.trim() || null,
       })
       if (error) throw error
     },
@@ -518,8 +527,9 @@ function PagoModal({
 
   const guardar = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.rpc('register_supplier_payment', {
-        _purchase_id: pagar!.purchase_id,
+      const { error } = await supabase.rpc('register_payment_out', {
+        _origen: pagar!.origen,
+        _ref_id: pagar!.ref_id,
         _amount: Number(monto) || pagar!.saldo,
         _method: metodo,
         _reference: referencia.trim() || null,

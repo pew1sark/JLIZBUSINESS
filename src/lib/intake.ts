@@ -14,7 +14,9 @@ export interface Campo {
 }
 
 export interface Seccion {
-  kind: 'productos' | 'rendimientos' | 'clientes' | 'proveedores' | 'costos'
+  kind:
+    | 'productos' | 'rendimientos' | 'clientes' | 'proveedores' | 'costos'
+    | 'inventario_apertura' | 'saldos_cobrar' | 'saldos_pagar'
   titulo: string
   intro: string
   filaUnica?: boolean
@@ -117,6 +119,55 @@ export const SECCIONES: Seccion[] = [
       { key: 'productos', label: 'Qué les vende', tipo: 'texto', ancho: 'lg' },
       { key: 'dias_pago', label: 'Días de pago', tipo: 'numero', ancho: 'sm' },
       { key: 'evaluacion', label: 'Evaluación (1-5)', tipo: 'numero', ancho: 'sm' },
+      { key: 'observaciones', label: 'Observaciones', tipo: 'texto', ancho: 'lg' },
+    ],
+  },
+  {
+    kind: 'inventario_apertura',
+    titulo: 'Stock que hay hoy',
+    intro:
+      'Lo que tienen en cámara en este momento, con lo que costó. Es el punto de partida del inventario: sin esto el sistema arranca en cero y no cuadra con la realidad. Complétenlo el día antes de empezar a usarlo.',
+    etiquetaFila: 'producto en cámara',
+    campos: [
+      { key: 'producto', label: 'Producto', tipo: 'texto', requerido: true, ayuda: 'Debe llamarse igual que en el catálogo', ancho: 'lg' },
+      { key: 'kilos', label: 'Kilos que hay', tipo: 'numero', requerido: true, ancho: 'sm' },
+      { key: 'costo_kilo', label: 'Costo por kilo', tipo: 'dinero', ayuda: 'Lo que pagaron por ese pescado', ancho: 'sm' },
+      { key: 'proveedor', label: 'Proveedor', tipo: 'texto', ancho: 'md' },
+      { key: 'fecha_recepcion', label: 'Cuándo llegó', tipo: 'texto', placeholder: '2026-08-18', ancho: 'sm' },
+      { key: 'vence', label: 'Vence', tipo: 'texto', placeholder: '2026-08-21', ancho: 'sm' },
+      { key: 'ubicacion', label: 'Dónde está', tipo: 'texto', placeholder: 'Cámara oficina', ancho: 'md' },
+      { key: 'observaciones', label: 'Observaciones', tipo: 'texto', ancho: 'lg' },
+    ],
+  },
+  {
+    kind: 'saldos_cobrar',
+    titulo: 'Lo que les deben',
+    intro:
+      'Facturas pendientes de cobro al día de hoy, una por fila. Sin esto la cobranza arranca vacía y se pierde de vista plata real. No hace falta cargar el historial completo: solo lo que sigue pendiente.',
+    etiquetaFila: 'factura por cobrar',
+    campos: [
+      { key: 'cliente', label: 'Cliente', tipo: 'texto', requerido: true, ayuda: 'Igual que en la lista de clientes', ancho: 'lg' },
+      { key: 'documento', label: 'N° de factura', tipo: 'texto', ancho: 'sm' },
+      { key: 'fecha', label: 'Fecha de emisión', tipo: 'texto', placeholder: '2026-07-20', ancho: 'sm' },
+      { key: 'vence', label: 'Vence', tipo: 'texto', placeholder: '2026-08-19', ancho: 'sm' },
+      { key: 'monto', label: 'Monto total', tipo: 'dinero', requerido: true, ancho: 'sm' },
+      { key: 'abonado', label: 'Ya abonado', tipo: 'dinero', ayuda: 'Si pagó una parte', ancho: 'sm' },
+      { key: 'observaciones', label: 'Observaciones', tipo: 'texto', ancho: 'lg' },
+    ],
+  },
+  {
+    kind: 'saldos_pagar',
+    titulo: 'Lo que ustedes deben',
+    intro:
+      'Facturas de proveedores pendientes de pago al día de hoy. Igual que la anterior: solo lo que sigue abierto.',
+    etiquetaFila: 'factura por pagar',
+    campos: [
+      { key: 'proveedor', label: 'Proveedor', tipo: 'texto', requerido: true, ancho: 'lg' },
+      { key: 'documento', label: 'N° de factura', tipo: 'texto', ancho: 'sm' },
+      { key: 'fecha', label: 'Fecha de emisión', tipo: 'texto', placeholder: '2026-08-01', ancho: 'sm' },
+      { key: 'vence', label: 'Vence', tipo: 'texto', placeholder: '2026-08-31', ancho: 'sm' },
+      { key: 'monto', label: 'Monto total', tipo: 'dinero', requerido: true, ancho: 'sm' },
+      { key: 'abonado', label: 'Ya abonado', tipo: 'dinero', ancho: 'sm' },
       { key: 'observaciones', label: 'Observaciones', tipo: 'texto', ancho: 'lg' },
     ],
   },

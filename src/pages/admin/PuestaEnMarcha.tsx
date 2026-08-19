@@ -13,6 +13,9 @@ interface Readiness {
   clientes: number
   proveedores: number
   rendimientos: number
+  stock_inicial: number
+  saldos_por_cobrar: number
+  saldos_por_pagar: number
   usuarios_activos: number
   roles_cubiertos: AppRole[]
   invitaciones_pendientes: number
@@ -73,6 +76,8 @@ export function PuestaEnMarcha() {
         { ok: e.proveedores > 0, label: 'Proveedores', detalle: `${e.proveedores} proveedores` },
         { ok: e.rendimientos > 0, label: 'Rendimientos del proceso', detalle: `${e.rendimientos} registrados · necesarios para el costo del filete` },
         { ok: e.costos_declarados, label: 'Costos exactos declarados', detalle: 'Costos por viaje y fijos mensuales del formulario' },
+        { ok: e.stock_inicial > 0, label: 'Stock inicial cargado', detalle: `${e.stock_inicial} lote(s) de apertura · sin esto el inventario parte en cero` },
+        { ok: e.saldos_por_cobrar + e.saldos_por_pagar > 0, label: 'Saldos arrastrados', detalle: `${e.saldos_por_cobrar} por cobrar · ${e.saldos_por_pagar} por pagar` },
         { ok: e.usuarios_activos > 1, label: 'Equipo con acceso', detalle: `${e.usuarios_activos} cuentas activas` },
       ]
     : []
