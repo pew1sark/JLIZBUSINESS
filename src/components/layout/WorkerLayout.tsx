@@ -1,19 +1,25 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Bell, Boxes, ClipboardList, Home, LogOut, Truck, User } from 'lucide-react'
+import { BarChart3, Bell, Boxes, ClipboardList, Home, LogOut, Truck, User } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../../context/AuthContext'
 import { ROLE_LABEL } from '../../lib/constants'
 import { initials } from '../../lib/format'
 import type { AppRole } from '../../lib/types'
 
-/** Navegación de terreno: pocos destinos, botones grandes, pensada para el teléfono. */
+/**
+ * Navegación de terreno: pocos destinos, botones grandes, pensada para el teléfono.
+ * El personal no ve finanzas, costos ni márgenes: sus pantallas leen vistas
+ * operativas sin valores, y la base de datos les niega el resto.
+ */
+const OPERATIVOS: AppRole[] = ['ventas', 'compras', 'inventario', 'empaque', 'reparto']
+
 const NAV: { to: string; label: string; icon: typeof Home; roles: AppRole[] }[] = [
-  { to: '/t', label: 'Inicio', icon: Home, roles: ['ventas', 'compras', 'inventario', 'empaque', 'reparto'] },
-  { to: '/t/tareas', label: 'Mis tareas', icon: ClipboardList, roles: ['ventas', 'compras', 'inventario', 'empaque', 'reparto'] },
-  { to: '/t/preparacion', label: 'Preparar', icon: Boxes, roles: ['inventario', 'empaque'] },
-  { to: '/t/entregas', label: 'Entregas', icon: Truck, roles: ['reparto'] },
-  { to: '/t/notificaciones', label: 'Avisos', icon: Bell, roles: ['ventas', 'compras', 'inventario', 'empaque', 'reparto'] },
-  { to: '/t/perfil', label: 'Perfil', icon: User, roles: ['ventas', 'compras', 'inventario', 'empaque', 'reparto'] },
+  { to: '/t', label: 'Inicio', icon: Home, roles: OPERATIVOS },
+  { to: '/t/pedidos', label: 'Pedidos', icon: ClipboardList, roles: ['ventas', 'compras', 'inventario', 'empaque'] },
+  { to: '/t/ruta', label: 'Ruta', icon: Truck, roles: ['reparto'] },
+  { to: '/t/stock', label: 'Stock', icon: Boxes, roles: OPERATIVOS },
+  { to: '/t/reportes', label: 'Reportes', icon: BarChart3, roles: OPERATIVOS },
+  { to: '/t/perfil', label: 'Perfil', icon: User, roles: OPERATIVOS },
 ]
 
 export function WorkerLayout() {
@@ -34,8 +40,13 @@ export function WorkerLayout() {
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{profile?.full_name}</p>
-          <p className="text-[11px] text-navy-300">{profile ? ROLE_LABEL[profile.role] : ''}</p>
+          <p className="text-[11px] text-navy-300">
+            Pescadería Bilagay · {profile ? ROLE_LABEL[profile.role] : ''}
+          </p>
         </div>
+        <NavLink to="/t/avisos" className="rounded-lg p-2 text-navy-200 hover:bg-navy-800">
+          <Bell className="h-5 w-5" />
+        </NavLink>
         <button onClick={handleSignOut} className="rounded-lg p-2 text-navy-200 hover:bg-navy-800">
           <LogOut className="h-5 w-5" />
         </button>

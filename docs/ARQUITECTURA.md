@@ -1,9 +1,9 @@
-# JLIZ BUSINESS — Arquitectura del sistema
+# PESCADERÍA BILAGAY SpA — Arquitectura del sistema
 
 Sistema de gestión (ERP/POS) para distribuidora de pescado fresco.
 Documento base: decisiones, modelo de datos, permisos, flujos y plan por fases.
 
-Última actualización: 18 de agosto de 2026 · Fases 1 y 2 implementadas, modelo ajustado al levantamiento.
+Última actualización: 19 de agosto de 2026 · Fases 1, 2 y 3 implementadas y portal de trabajadores en operación. Modelo ajustado a las 107 respuestas del levantamiento.
 
 ---
 
@@ -165,7 +165,15 @@ recepción y el trabajador que lo recibió. Y al revés: desde un lote se ve a q
 
 ## 5. Roles y permisos
 
-Seis roles: `admin`, `ventas`, `compras`, `inventario`, `empaque`, `reparto`.
+Siete roles: `admin`, `finanzas`, `ventas`, `compras`, `inventario`, `empaque`, `reparto`.
+
+**Separación de la información financiera.** RLS filtra filas, no columnas, así que el personal
+de terreno no lee las tablas que contienen valores (`products`, `orders`, `inventory_lots`,
+`payments`, `purchases`, `customers`). En su lugar trabajan sobre seis vistas operativas que
+solo tienen kilos, direcciones y estados: `v_stock_operativo`, `v_lotes_operativos`,
+`v_pedidos_operativos`, `v_pedido_items_operativos`, `v_hoja_ruta` y `v_reportes_operativos`.
+Verificado en la base: con rol `reparto` o `empaque`, esas tablas devuelven **cero filas**, y
+ninguna de las vistas contiene columnas de costo, precio, margen o deuda.
 
 Tres capas, en este orden de autoridad:
 

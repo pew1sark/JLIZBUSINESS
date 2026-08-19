@@ -1,83 +1,78 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Bell, Boxes, ChevronRight, ClipboardList, Package, Truck } from 'lucide-react'
+import { AlertTriangle, BarChart3, Boxes, ChevronRight, ClipboardList, Truck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { useHojaRuta, usePedidosOperativos, useStockOperativo } from '../../lib/operativo'
 import { ROLE_LABEL } from '../../lib/constants'
+import { kg } from '../../lib/format'
 import { Card, Skeleton } from '../../components/ui'
 
 export function WorkerHome() {
   const { profile } = useAuth()
+  const rol = profile?.role
+  const esReparto = rol === 'reparto'
 
-  const resumen = useQuery({
-    queryKey: ['worker-resumen', profile?.id, profile?.role],
-    enabled: !!profile,
-    refetchInterval: 60_000,
+  const pedidos = usePedidosOperativos(['confirmado', 'en_preparacion', 'preparado'])
+  const ruta = useHojaRuta(new Date().toISOString().slice(0, 10))
+  const stock = useStockOperativo()
+
+  const avisos = useQuery({
+    queryKey: ['op-avisos'],
     queryFn: async () => {
-      const [porPreparar, enPreparacion, misEntregas, avisos] = await Promise.all([
-        supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'confirmado'),
-        supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'en_preparacion'),
-        supabase
-          .from('deliveries')
-          .select('id', { count: 'exact', head: true })
-          .eq('driver_id', profile!.id)
-          .in('status', ['asignada', 'en_camino']),
-        supabase.from('notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
-      ])
-      return {
-        porPreparar: porPreparar.count ?? 0,
-        enPreparacion: enPreparacion.count ?? 0,
-        misEntregas: misEntregas.count ?? 0,
-        avisos: avisos.count ?? 0,
-      }
+      const { count } = await supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .is('read_at', null)
+      return count ?? 0
     },
   })
 
+  const porPreparar = (pedidos.data ?? []).filter((p) => p.status === 'confirmado').length
+  const enPreparacion = (pedidos.data ?? []).filter((p) => p.status === 'en_preparacion').length
+  const listos = (pedidos.data ?? []).filter((p) => p.status === 'preparado').length
+  const entregasPendientes = (ruta.data ?? []).filter(
+    (p) => p.status !== 'entregada' && p.status !== 'fallida',
+  )
+  const bajos = (stock.data ?? []).filter((p) => p.bajo_minimo)
+
   const hoy = new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
-  const role = profile?.role
+  const cargando = pedidos.isLoading || ruta.isLoading || stock.isLoading
 
   const accesos = [
     {
-      show: role === 'empaque' || role === 'inventario',
-      to: '/t/preparacion',
-      icon: Boxes,
-      title: 'Preparar pedidos',
-      value: resumen.data?.porPreparar ?? 0,
-      hint: 'pedidos confirmados esperando preparación',
-    },
-    {
-      show: role === 'reparto',
-      to: '/t/entregas',
-      icon: Truck,
-      title: 'Mis entregas de hoy',
-      value: resumen.data?.misEntregas ?? 0,
-      hint: 'asignadas o en camino',
-    },
-    {
-      show: role === 'compras',
-      to: '/t/tareas',
-      icon: Package,
-      title: 'Registrar compra',
-      value: 0,
-      hint: 'nueva recepción de mercadería',
-    },
-    {
-      show: true,
-      to: '/t/tareas',
+      ver: !esReparto,
+      to: '/t/pedidos',
       icon: ClipboardList,
-      title: 'Mis tareas',
-      value: 0,
-      hint: 'pendientes asignadas a ti',
+      titulo: 'Preparar pedidos',
+      valor: porPreparar + enPreparacion,
+      detalle: `${porPreparar} por preparar · ${enPreparacion} en curso · ${listos} listos`,
     },
     {
-      show: true,
-      to: '/t/notificaciones',
-      icon: Bell,
-      title: 'Avisos',
-      value: resumen.data?.avisos ?? 0,
-      hint: 'sin leer',
+      ver: esReparto,
+      to: '/t/ruta',
+      icon: Truck,
+      titulo: 'Mi hoja de ruta',
+      valor: entregasPendientes.length,
+      detalle: `${kg(entregasPendientes.reduce((n, p) => n + Number(p.total_kilos), 0))} por repartir`,
     },
-  ].filter((a) => a.show)
+    {
+      ver: true,
+      to: '/t/stock',
+      icon: Boxes,
+      titulo: 'Stock',
+      valor: bajos.length,
+      detalle: bajos.length ? `${bajos.length} producto(s) bajo el mínimo` : 'Todo sobre el mínimo',
+    },
+    {
+      ver: true,
+      to: '/t/reportes',
+      icon: BarChart3,
+      titulo: 'Reportes',
+      valor: 0,
+      detalle: 'Kilos recibidos, despachados y merma',
+    },
+  ].filter((a) => a.ver)
 
   return (
     <>
@@ -87,25 +82,37 @@ export function WorkerHome() {
         <p className="mt-1 text-xs text-slate-400">{profile ? ROLE_LABEL[profile.role] : ''}</p>
       </div>
 
-      {resumen.isLoading ? (
+      {bajos.length > 0 && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="min-w-0 text-sm">
+            <p className="font-medium text-amber-900">Stock bajo el mínimo</p>
+            <p className="truncate text-xs text-amber-800">
+              {bajos.slice(0, 3).map((p) => `${p.name} (${kg(p.available)})`).join(' · ')}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {cargando ? (
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
         </div>
       ) : (
         <div className="space-y-3">
-          {accesos.map(({ to, icon: Icon, title, value, hint }) => (
-            <Link key={title} to={to}>
+          {accesos.map(({ to, icon: Icon, titulo, valor, detalle }) => (
+            <Link key={to} to={to}>
               <Card className="flex items-center gap-4 p-4 active:bg-slate-50">
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-navy-900 text-white">
                   <Icon className="h-6 w-6" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-base font-semibold text-slate-900">{title}</span>
-                  <span className="block text-xs text-slate-500">{hint}</span>
+                  <span className="block text-base font-semibold text-slate-900">{titulo}</span>
+                  <span className="block text-xs text-slate-500">{detalle}</span>
                 </span>
-                {value > 0 && (
+                {valor > 0 && (
                   <span className="flex h-8 min-w-8 items-center justify-center rounded-full bg-sea-100 px-2 text-sm font-semibold text-sea-800">
-                    {value}
+                    {valor}
                   </span>
                 )}
                 <ChevronRight className="h-5 w-5 shrink-0 text-slate-300" />
@@ -113,6 +120,12 @@ export function WorkerHome() {
             </Link>
           ))}
         </div>
+      )}
+
+      {(avisos.data ?? 0) > 0 && (
+        <Link to="/t/avisos" className="mt-3 block text-center text-sm font-medium text-navy-600">
+          Tienes {avisos.data} aviso(s) sin leer
+        </Link>
       )}
     </>
   )

@@ -47,7 +47,7 @@ export function AdminLayout() {
           <Fish className="h-5 w-5" />
         </div>
         <div>
-          <p className="text-sm font-semibold tracking-tight text-white">JLIZ Business</p>
+          <p className="text-sm font-semibold tracking-tight text-white">Pescadería Bilagay</p>
           <p className="text-[11px] text-navy-300">Pescado fresco</p>
         </div>
       </div>

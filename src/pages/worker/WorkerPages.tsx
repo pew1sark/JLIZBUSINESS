@@ -1,48 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import { Card, EmptyState, PhaseNotice, Skeleton } from '../../components/ui'
+import { Card, EmptyState, Skeleton } from '../../components/ui'
 import { ROLE_LABEL } from '../../lib/constants'
 import { relative } from '../../lib/format'
 import type { AppNotification } from '../../lib/types'
-
-export function MisTareas() {
-  return (
-    <>
-      <h1 className="mb-4 text-xl font-semibold text-slate-900">Mis tareas</h1>
-      <PhaseNotice phase="Fase 4">
-        Lista de tareas asignadas (tabla <code>tasks</code>) con botones grandes para completarlas en
-        pocos pasos desde el teléfono.
-      </PhaseNotice>
-    </>
-  )
-}
-
-export function Preparacion() {
-  return (
-    <>
-      <h1 className="mb-4 text-xl font-semibold text-slate-900">Preparación</h1>
-      <PhaseNotice phase="Fase 4">
-        Pantalla de empaque: pedidos por preparar, productos y kilos solicitados, registro del peso real
-        por línea y confirmación con <code>finish_preparation()</code>, que descuenta el stock de los lotes
-        reservados y recalcula el costo del pedido.
-      </PhaseNotice>
-    </>
-  )
-}
-
-export function MisEntregas() {
-  return (
-    <>
-      <h1 className="mb-4 text-xl font-semibold text-slate-900">Mis entregas</h1>
-      <PhaseNotice phase="Fase 4">
-        Entregas asignadas del día con dirección, teléfono, monto y botones «En camino», «Llamar
-        cliente», «Abrir mapa» y «Entregado» (función <code>complete_delivery()</code>, que además registra
-        el cobro en terreno).
-      </PhaseNotice>
-    </>
-  )
-}
 
 export function Avisos() {
   const qc = useQueryClient()
@@ -111,7 +73,7 @@ export function Perfil() {
         Cerrar sesión
       </button>
       <p className="mt-6 text-center text-xs text-slate-400">
-        JLIZ Business · Fase 1 · Solicita a tu administrador cualquier cambio de rol.
+        Pescadería Bilagay SpA · Solicita a tu administrador cualquier cambio de rol.
       </p>
     </>
   )

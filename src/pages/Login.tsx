@@ -50,7 +50,7 @@ export function Login() {
           <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-sea-500 text-white">
             <Fish className="h-7 w-7" />
           </div>
-          <h1 className="text-xl font-semibold text-white">JLIZ Business</h1>
+          <h1 className="text-xl font-semibold text-white">Pescadería Bilagay</h1>
           <p className="mt-1 text-sm text-navy-300">Gestión de distribuidora de pescado fresco</p>
         </div>
 

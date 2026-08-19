@@ -20,7 +20,11 @@ const Levantamiento = lazy(() => import('./pages/admin/Levantamiento').then((m) 
 import { Survey } from './pages/Survey'
 const Catalogo = lazy(() => import('./pages/Catalogo').then((m) => ({ default: m.Catalogo })))
 import { WorkerHome } from './pages/worker/WorkerHome'
-import { Avisos, MisEntregas, MisTareas, Perfil, Preparacion } from './pages/worker/WorkerPages'
+import { Avisos, Perfil } from './pages/worker/WorkerPages'
+const WorkerPedidos = lazy(() => import('./pages/worker/WorkerPedidos').then((m) => ({ default: m.WorkerPedidos })))
+const WorkerRuta = lazy(() => import('./pages/worker/WorkerRuta').then((m) => ({ default: m.WorkerRuta })))
+const WorkerStock = lazy(() => import('./pages/worker/WorkerStock').then((m) => ({ default: m.WorkerStock })))
+const WorkerReportes = lazy(() => import('./pages/worker/WorkerReportes').then((m) => ({ default: m.WorkerReportes })))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -79,10 +83,11 @@ export default function App() {
               }
             >
               <Route path="/t" element={<WorkerHome />} />
-              <Route path="/t/tareas" element={<MisTareas />} />
-              <Route path="/t/preparacion" element={<Preparacion />} />
-              <Route path="/t/entregas" element={<MisEntregas />} />
-              <Route path="/t/notificaciones" element={<Avisos />} />
+              <Route path="/t/pedidos" element={<WorkerPedidos />} />
+              <Route path="/t/ruta" element={<WorkerRuta />} />
+              <Route path="/t/stock" element={<WorkerStock />} />
+              <Route path="/t/reportes" element={<WorkerReportes />} />
+              <Route path="/t/avisos" element={<Avisos />} />
               <Route path="/t/perfil" element={<Perfil />} />
             </Route>
 

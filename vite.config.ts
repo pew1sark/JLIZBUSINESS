@@ -13,9 +13,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'JLIZ Business · Gestión de pescado fresco',
-        short_name: 'JLIZ',
-        description: 'Sistema de gestión integral para distribuidora de pescado fresco',
+        name: 'Pescadería Bilagay SpA · Gestión de pescado fresco',
+        short_name: 'Bilagay',
+        description: 'Gestión de compras, inventario, pedidos y reparto de Pescadería Bilagay SpA',
         theme_color: '#0b2545',
         background_color: '#0b2545',
         display: 'standalone',

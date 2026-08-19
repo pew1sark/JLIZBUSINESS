@@ -1,11 +1,13 @@
-# JLIZ BUSINESS
+# PESCADERÍA BILAGAY SpA
 
 Sistema de gestión integral (ERP/POS) para una distribuidora de pescado fresco:
 compra → recepción → inventario → venta → preparación → despacho → entrega → pago → rentabilidad.
 
-**Estado: Fases 1 y 2 completas** — base de datos, seguridad, autenticación, roles, las dos interfaces,
-dashboard con datos reales, y los módulos de productos, inventario, lotes, procesamiento,
-compras y proveedores. El modelo está ajustado a las 107 respuestas del levantamiento. El detalle está en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
+**Estado: Fases 1, 2 y 3 completas + portal de trabajadores** — base de datos, seguridad, autenticación, roles, las dos interfaces,
+dashboard con datos reales, los módulos de productos, inventario, lotes, procesamiento, compras,
+proveedores, clientes, pedidos y ventas, más el portal móvil del personal (pedidos, hoja de ruta,
+stock y reportes) sin acceso a información financiera. El modelo está ajustado a las 107
+respuestas del levantamiento. El detalle está en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 
 ## Stack
 
