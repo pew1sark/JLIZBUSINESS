@@ -3,11 +3,11 @@
 Sistema de gestión integral (ERP/POS) para una distribuidora de pescado fresco:
 compra → recepción → inventario → venta → preparación → despacho → entrega → pago → rentabilidad.
 
-**Estado: Fases 1, 2 y 3 completas + portal de trabajadores** — base de datos, seguridad, autenticación, roles, las dos interfaces,
-dashboard con datos reales, los módulos de productos, inventario, lotes, procesamiento, compras,
-proveedores, clientes, pedidos y ventas, más el portal móvil del personal (pedidos, hoja de ruta,
-stock y reportes) sin acceso a información financiera. El modelo está ajustado a las 107
-respuestas del levantamiento. El detalle está en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
+**Estado: fases 1 a 5 completas + portal de trabajadores + control de cuentas** — base de datos, seguridad, autenticación, roles, las dos interfaces,
+dashboard, productos, inventario, lotes, procesamiento, compras, proveedores, clientes, pedidos,
+ventas, entregas, finanzas, reportes exportables, auditoría, cuentas y accesos, configuración, y el
+portal móvil del personal (pedidos, hoja de ruta, stock y reportes) sin acceso a información
+financiera. El modelo está ajustado a las 107 respuestas del levantamiento. El detalle está en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 
 ## Stack
 

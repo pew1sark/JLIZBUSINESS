@@ -3,7 +3,7 @@
 Sistema de gestión (ERP/POS) para distribuidora de pescado fresco.
 Documento base: decisiones, modelo de datos, permisos, flujos y plan por fases.
 
-Última actualización: 19 de agosto de 2026 · Fases 1, 2 y 3 implementadas y portal de trabajadores en operación. Modelo ajustado a las 107 respuestas del levantamiento.
+Última actualización: 19 de agosto de 2026 · Fases 1 a 5 implementadas, portal de trabajadores y control de cuentas en operación. Modelo ajustado a las 107 respuestas del levantamiento.
 
 ---
 

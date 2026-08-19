@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronRight, Loader2, Lock, ShieldCheck, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { PuestaEnMarcha } from './PuestaEnMarcha'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui'
 
 type Valores = Record<string, string | number | boolean | null>
@@ -125,6 +126,8 @@ export function Configuracion() {
           </button>
         }
       />
+
+      <PuestaEnMarcha />
 
       <Link to="/trabajadores">
         <Card className="mb-4 flex items-center gap-4 p-4 hover:border-navy-300">
