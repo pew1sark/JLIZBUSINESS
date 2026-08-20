@@ -22,6 +22,7 @@ const Productos = lazy(() => import('./pages/admin/Productos').then((m) => ({ de
 const Inventario = lazy(() => import('./pages/admin/Inventario').then((m) => ({ default: m.Inventario })))
 const Compras = lazy(() => import('./pages/admin/Compras').then((m) => ({ default: m.Compras })))
 const Proveedores = lazy(() => import('./pages/admin/Proveedores').then((m) => ({ default: m.Proveedores })))
+const Historico = lazy(() => import('./pages/admin/Historico').then((m) => ({ default: m.Historico })))
 const Levantamiento = lazy(() => import('./pages/admin/Levantamiento').then((m) => ({ default: m.Levantamiento })))
 import { Survey } from './pages/Survey'
 const Catalogo = lazy(() => import('./pages/Catalogo').then((m) => ({ default: m.Catalogo })))
@@ -75,6 +76,7 @@ export default function App() {
               <Route path="/finanzas" element={<Finanzas />} />
               <Route path="/reportes" element={<Reportes />} />
               <Route path="/trabajadores" element={<Trabajadores />} />
+              <Route path="/historico" element={<Historico />} />
               <Route path="/levantamiento" element={<Levantamiento />} />
               <Route path="/auditoria" element={<Auditoria />} />
               <Route path="/configuracion" element={<Configuracion />} />
