@@ -73,6 +73,15 @@ export function Login() {
           </div>
 
           {mode === 'signup' && (
+            <div className="rounded-lg bg-navy-50 px-3 py-2.5 text-xs text-navy-800">
+              <p className="font-medium">Las cuentas se crean por invitación</p>
+              <p className="mt-0.5 text-navy-700/80">
+                Usa el mismo correo que el administrador autorizó. Cualquier otro será rechazado.
+              </p>
+            </div>
+          )}
+
+          {mode === 'signup' && (
             <div>
               <label className="label">Nombre completo</label>
               <input
@@ -139,9 +148,9 @@ export function Login() {
         </form>
 
         <p className="mt-4 text-center text-[11px] leading-relaxed text-navy-300">
-          El primer usuario que se registre queda como <strong className="text-navy-100">administrador</strong>.
+          El acceso lo crea el administrador desde <strong className="text-navy-100">Cuentas y accesos</strong>.
           <br />
-          Los siguientes ingresan como personal y el administrador les asigna su rol.
+          Si tu correo no está autorizado, el registro no se completará.
         </p>
       </div>
     </div>

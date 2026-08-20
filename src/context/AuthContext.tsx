@@ -112,6 +112,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 function traducirError(msg: string) {
+  // El alta de usuario rechaza los correos no invitados desde la base de datos.
+  // Supabase devuelve ese fallo envuelto en un error genérico, así que hay que
+  // reconocerlo acá para poder decirle a la persona qué le pasó realmente.
+  if (/no está autorizado/i.test(msg)
+      || /Database error saving new user/i.test(msg)
+      || /unexpected_failure/i.test(msg)) {
+    return 'Tu correo no está autorizado para crear una cuenta. El administrador debe darte acceso primero desde Cuentas y accesos.'
+  }
   if (/Invalid login credentials/i.test(msg)) return 'Correo o contraseña incorrectos.'
   if (/Email not confirmed/i.test(msg)) return 'Debes confirmar tu correo antes de ingresar.'
   if (/User already registered/i.test(msg)) return 'Ese correo ya está registrado.'
