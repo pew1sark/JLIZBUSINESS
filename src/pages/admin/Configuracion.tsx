@@ -5,6 +5,7 @@ import { Check, ChevronRight, Loader2, Lock, ShieldCheck, Users } from 'lucide-r
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { PuestaEnMarcha } from './PuestaEnMarcha'
+import { BsaleConexion } from './BsaleConexion'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui'
 
 type Valores = Record<string, string | number | boolean | null>
@@ -215,6 +216,10 @@ export function Configuracion() {
       )}
 
       {guardar.isError && <div className="mt-3"><ErrorState error={guardar.error} /></div>}
+
+      <div className="mt-4">
+        <BsaleConexion />
+      </div>
 
       <Card className="mt-4 flex items-start gap-3 p-4 text-xs text-slate-500">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />

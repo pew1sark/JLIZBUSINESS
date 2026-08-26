@@ -1,0 +1,37 @@
+-- ============================================================
+-- INTEGRACIÓN BSALE · API oficial como fuente de verdad
+--
+-- Documentación consultada: https://docs.bsale.dev
+--   base       https://api.bsale.io/v1
+--   cabecera   access_token: <token>
+--   límites    3.000 peticiones / 300 segundos · `limit` máximo 50
+--
+-- Las compras en Bsale NO están en un solo recurso. Se usan dos,
+-- porque son complementarios:
+--   · GET /v1/third_party_documents.json
+--       Libro de compras. Trae proveedor (clientCode), emissionDate,
+--       netAmount, ivaAmount, totalAmount, urlPdf/urlXml.
+--       NO trae detalle por producto.
+--       Filtros documentados: emissiondate, codesii, number,
+--       clientcode, year, month, receptiondate.
+--   · GET /v1/stocks/receptions.json  y  /{id}/details.json
+--       Recepción de mercadería. El detalle sí trae `cost` y
+--       `quantity` por variante — que es el costo que falta para
+--       poder calcular margen.
+--       Filtros documentados: admissiondate, documentnumber, officeid.
+--   · GET /v1/variants/{id}/costs.json  → averageCost + historial FIFO.
+--
+-- Sincronía en el tiempo: webhooks de Bsale, tópicos "Documento de
+-- compra" y "Stock". Se activan escribiendo a ayuda@bsale.app con el
+-- RUT y la URL. La documentación NO describe firma ni verificación,
+-- así que el receptor exige un secreto en la URL y trata el payload
+-- como no confiable: solo lo usa para saber qué volver a leer desde
+-- la API autenticada.
+--
+-- El diseño gira alrededor de "conexión", no de una empresa fija:
+-- cuando esto se mueva a la plataforma multiempresa basta con colgar
+-- company_id de la conexión.
+--
+-- Aplicado como `bsale_conexion_y_aterrizaje` y `bsale_token_en_vault`.
+-- El token vive cifrado en Vault; las funciones puente solo las puede
+-- ejecutar service_role, nunca el navegador.

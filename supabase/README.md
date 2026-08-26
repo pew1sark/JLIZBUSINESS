@@ -22,6 +22,7 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 | `reiniciar_cobranza` | `reset_collections(_confirm, _customer_id, _dry_run)`: borra los cobros y sus imputaciones para deshacer una prueba. Solo admin, exige escribir `REINICIAR COBRANZA`, simula por defecto y queda en `audit_logs`. No toca facturas, clientes ni productos. |
 | `saldo_cliente_y_serie_con_facturas` + `dashboard_riesgo_y_cobertura` | `v_customer_balance` (que alimenta el mapa del dashboard y la pantalla de Clientes) y `sales_series` pasan a incluir los documentos importados; sin esto los 39 clientes salían con saldo cero y el gráfico plano. `dashboard_kpis` suma `vencido_grave` (+30 días), `documentos_mes`, `documentos_por_cobrar`, `clientes_con_deuda` y `cobertura_costo_pct`. |
 | `corregir_iva_y_costos_importados` | Quita el `default 0` de `impuestos`/`costo_unit`/`costo_total` en `sales_import_rows`: con 0 el respaldo `coalesce(impuestos, bruto - neto)` nunca se activaba y los documentos importados quedaban con IVA en cero. Recalcula el IVA de lo ya cargado. |
+| `bsale_conexion_y_aterrizaje` + `bsale_token_en_vault` | Integración con la API oficial de Bsale: `bsale_connections` (token cifrado en Vault), `bsale_sync_runs`, `bsale_webhook_events` (bandeja idempotente) y las tablas de aterrizaje crudo `bsale_third_party_documents`, `bsale_receptions`, `bsale_reception_details`. Las funciones puente al Vault solo las ejecuta `service_role`. |
 
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 
