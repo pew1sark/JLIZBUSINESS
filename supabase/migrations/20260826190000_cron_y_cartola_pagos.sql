@@ -1,0 +1,39 @@
+-- ============================================================
+-- 1. CARTOLA DE PAGOS DE VENTA
+--
+-- El libro de ventas de Bsale no dice si la factura está pagada, así que
+-- toda la cartera figuraba como deuda viva. La cartola que lleva la
+-- empresa sí trae FECHA PAGO por folio.
+--
+-- `payment_statement_rows` aterriza la planilla y `aplicar_cartola_pagos()`
+-- la convierte en cobros reales: cada factura pagada genera un cobro con
+-- su fecha y su imputación, por la misma vía que un cobro manual. Nunca
+-- se escribe `amount_paid` a mano — el saldo siempre sale de las
+-- imputaciones. Es idempotente: una factura que ya tiene cobros no se
+-- toca, porque un registro manual manda sobre la planilla.
+--
+-- Efecto de la primera carga: deuda de $140.416.709 a $68.185.549 y
+-- vencido de $76.212.971 a $10.281.898. El plazo real de pago resultó
+-- ser 33 días promedio.
+--
+-- 2. SINCRONIZACIÓN AUTOMÁTICA
+--
+-- `pg_cron` cada 30 minutos + `pg_net` llamando a la Edge Function
+-- `bsale-cron`, que corre la cadena completa (libro de compras → XML →
+-- volcado → clasificación → costos) sobre el mes en curso y el anterior.
+--
+-- Media hora y no un minuto: una factura de proveedor que entra 20
+-- minutos más tarde no cambia ninguna decisión, y cada corrida consume
+-- cuota de la API (3.000 peticiones cada 300 segundos).
+--
+-- El secreto de automatización vive en Vault (`automation_secret_set` /
+-- `automation_secret_get`), no en una variable de entorno: así se rota
+-- desde la base y no queda escrito en la definición del trabajo.
+--
+-- `is_service_role()` / `puede_importar()`: el trabajo programado corre
+-- como service_role, que no tiene `auth.uid()`, así que `is_admin()` daba
+-- falso y la cadena se cortaba al volcar. Reconocerla no abre nada: la
+-- puerta sigue siendo el secreto.
+--
+-- Aplicado como `cartola_de_pagos_de_venta`, `secreto_de_automatizacion`,
+-- `cron_bsale_cada_30_min` y `permitir_service_role_en_importacion`.

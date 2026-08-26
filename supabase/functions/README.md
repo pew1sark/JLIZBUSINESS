@@ -7,6 +7,7 @@ vive en el proyecto Supabase; acá queda la referencia de qué hace cada una.
 |---|---|---|
 | `bsale-connect` | sí (admin) | Recibe el access token, **lo prueba contra `GET /v1/users.json?limit=1`** y solo si Bsale responde bien lo guarda cifrado en Vault y crea la conexión. El token nunca vuelve al navegador. |
 | `bsale-sync` | sí (admin) | Trae el libro de compras (`third_party_documents`, por año/mes), las recepciones (`stocks/receptions`) y sus detalles con costo. Va a ~8 req/s, reintenta con espera creciente ante 429/5xx, corta por número de páginas y guarda un cursor para retomar. |
+| `bsale-cron` | **no** | La que dispara `pg_cron`. Corre la cadena completa sobre el mes en curso y el anterior. Exige `x-cron-secret` contra el secreto de Vault; sin ese encabezado no hace nada. |
 | `bsale-webhook` | **no** | Recibe los avisos de Bsale. Como la API no documenta firma, exige `?key=<BSALE_WEBHOOK_SECRET>` y trata el payload como no confiable: solo registra qué recurso releer. |
 
 ## Secretos que hay que configurar en Supabase
