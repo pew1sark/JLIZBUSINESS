@@ -1,0 +1,34 @@
+-- ============================================================
+-- BSALE · detalle de compra desde el XML, y costo real
+--
+-- Camino que obligó la realidad, no el diseño previo:
+--   · Las recepciones de stock (/v1/stocks/receptions.json) vienen
+--     vacías: la empresa no usa el módulo de inventario de Bsale.
+--   · El libro de compras (/v1/third_party_documents.json) no trae
+--     detalle por producto.
+--   · Pero la API entrega `urlXml` por documento (84 de 86), y ese XML
+--     es el DTE del SII, que SÍ trae <Detalle> con NmbItem, QtyItem,
+--     UnmdItem, PrcItem y MontoItem. De ahí sale el costo por kilo.
+--
+-- TRES COSAS QUE EL XML REAL ENSEÑÓ (costaron datos mal cargados):
+--   1. El DTE declara encoding ISO-8859-1. Leerlo como UTF-8 destroza
+--      los acentos.
+--   2. En QtyItem y PrcItem el PUNTO ES SEPARADOR DECIMAL, jamás de
+--      miles. Tratarlo como miles convertía 66.50 kg en 6.650 kg y
+--      $7.500 en $750.000.
+--   3. Algunos emisores repiten <NroLinDet>: hay que desduplicar.
+--
+-- Objetos aplicados:
+--   bsale_document_items          líneas extraídas del DTE
+--   bsale_clasificar_items()      separa mercadería de gasto y mapea
+--                                 al catálogo. Importa: entre los
+--                                 proveedores hay peajes, internet,
+--                                 contabilidad y una ferretería; meter
+--                                 eso en el costo daría margen falso.
+--   bsale_aplicar_costos()        crea purchase_items, calcula
+--                                 avg_cost/last_cost por producto y
+--                                 costea las ventas.
+--
+-- El costo de venta es una ESTIMACIÓN por costo promedio de compra del
+-- período, no un FIFO por lote: el sistema de facturación no entrega el
+-- costo de cada venta.

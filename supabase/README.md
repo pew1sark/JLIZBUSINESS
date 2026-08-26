@@ -24,6 +24,7 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 | `corregir_iva_y_costos_importados` | Quita el `default 0` de `impuestos`/`costo_unit`/`costo_total` en `sales_import_rows`: con 0 el respaldo `coalesce(impuestos, bruto - neto)` nunca se activaba y los documentos importados quedaban con IVA en cero. Recalcula el IVA de lo ya cargado. |
 | `bsale_conexion_y_aterrizaje` + `bsale_token_en_vault` | Integración con la API oficial de Bsale: `bsale_connections` (token cifrado en Vault), `bsale_sync_runs`, `bsale_webhook_events` (bandeja idempotente) y las tablas de aterrizaje crudo `bsale_third_party_documents`, `bsale_receptions`, `bsale_reception_details`. Las funciones puente al Vault solo las ejecuta `service_role`. |
 | `bsale_volcar_compras_al_erp` | `bsale_apply_purchases(_connection_id, _dry_run)`: pasa el libro de compras aterrizado a `suppliers` + `purchases`. Cruza proveedores por **RUT normalizado** (los nombres vienen con doble codificación desde Bsale) y enlaza 1 a 1 con `purchases.bsale_document_id`, lo que hace la carga repetible. Incluye `fix_mojibake()`. |
+| `bsale_detalle_desde_xml` + `bsale_clasificar_lineas_de_compra` + `bsale_aplicar_costos` | Detalle de compra sacado del XML del DTE (`urlXml`), porque ni el libro de compras ni las recepciones lo entregan. Clasifica mercadería vs gasto, mapea al catálogo, crea `purchase_items` y calcula `avg_cost`/`last_cost`, con lo que las ventas quedan costeadas. |
 
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 
