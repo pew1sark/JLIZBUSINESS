@@ -126,9 +126,13 @@ export function Finanzas() {
 
   const k = kpis.data
   // Sin costos cargados no hay margen que mostrar: cualquier resultado sería inventado.
-  const sinCosto = (k?.cobertura_costo_pct ?? 0) === 0
-  const costoParcial = !sinCosto && (k?.cobertura_costo_pct ?? 100) < 95
-  const enPerdida = !sinCosto && (k?.resultado_estimado ?? 0) < 0
+  // Y con cobertura baja, el resultado del mes tampoco es una pérdida real:
+  // es costo que falta. Por eso el aviso de pérdida exige cobertura suficiente.
+  const cobertura = k?.cobertura_costo_pct ?? 0
+  const sinCosto = cobertura === 0
+  const costoParcial = !sinCosto && cobertura < 95
+  const margenFiable = cobertura >= 80
+  const enPerdida = margenFiable && (k?.resultado_estimado ?? 0) < 0
 
   function exportarCobranza() {
     const filas = [['Pedido', 'Cliente', 'Vence', 'Total', 'Pagado', 'Saldo', 'Días de atraso', 'Factura']]
@@ -162,9 +166,10 @@ export function Finanzas() {
             <StatCard label="Costos fijos al día" value={moneyShort(k.costos_fijos_proporcional)} hint={`de ${moneyShort(k.costos_fijos_mes)} al mes`} />
             <StatCard
               label="Resultado estimado"
-              value={sinCosto ? '—' : moneyShort(k.resultado_estimado)}
-              hint={sinCosto ? 'no calculable' : undefined}
-              tone={sinCosto ? 'default' : enPerdida ? 'danger' : 'positive'}
+              value={margenFiable ? moneyShort(k.resultado_estimado) : '—'}
+              hint={margenFiable ? undefined
+                    : sinCosto ? 'no calculable' : `solo ${pct(cobertura)} con costo`}
+              tone={!margenFiable ? 'default' : enPerdida ? 'danger' : 'positive'}
               icon={enPerdida ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
             />
             <StatCard label="Por cobrar" value={moneyShort(k.por_cobrar)} hint={`${moneyShort(k.vencido)} vencido`} tone={k.vencido > 0 ? 'danger' : 'default'} />
@@ -195,7 +200,9 @@ export function Finanzas() {
                 <p className="text-amber-800/80">
                   Solo {pct(k.cobertura_costo_pct)} de la venta del mes tiene costo cargado
                   ({money(k.venta_costeada)} de {money(k.venta_mes)}). El margen que se muestra
-                  corresponde a esa parte.
+                  corresponde a esa parte, y por eso el resultado del mes no se calcula: lo que
+                  falta es costo, no ganancia. El costo entra al registrar las compras en
+                  <span className="font-medium"> Compras</span>.
                 </p>
               </div>
             </div>

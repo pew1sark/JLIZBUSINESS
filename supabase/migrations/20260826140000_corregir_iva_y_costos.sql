@@ -1,0 +1,14 @@
+-- ============================================================
+-- IVA y costos de lo importado
+--
+-- `sales_import_rows` nacía con `default 0` en impuestos y costos.
+-- Eso anulaba el respaldo `coalesce(impuestos, bruto - neto)` de
+-- process_sales_import, así que los 746 documentos quedaron con
+-- tax_amount = 0 cuando el IVA real del período es $21.856.582.
+--
+-- Se quitan los defaults (pasan a NULL) para que el respaldo
+-- funcione en las próximas cargas, y se recalcula lo ya cargado.
+-- También se cargaron las 13 líneas que el sistema de facturación
+-- sí registró con costo ($474.450).
+--
+-- Aplicado como `corregir_iva_y_costos_importados`.

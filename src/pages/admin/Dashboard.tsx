@@ -12,7 +12,7 @@ import { supabase } from '../../lib/supabase'
 import { Mapa, type PuntoMapa } from '../../components/Mapa'
 import { CUSTOMER_TYPE_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE } from '../../lib/constants'
 import type { CustomerType, DashboardKpis, PaymentStatus, ProductStock } from '../../lib/types'
-import { dateShort, kg, money, moneyShort, relative } from '../../lib/format'
+import { dateShort, kg, money, moneyShort, pct, relative } from '../../lib/format'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton, StatCard } from '../../components/ui'
 
 interface SeriePunto { dia: string; ventas: number; compras: number; margen: number }
@@ -47,8 +47,11 @@ interface ActividadItem {
 
 /** El estado del negocio en ocho números. */
 export function ResumenKpis({ k }: { k: DashboardKpis }) {
-  // Sin costo cargado no hay margen que mostrar: se marca como no calculable.
-  const sinCosto = Number(k.cobertura_costo_pct) === 0
+  // El dashboard es una pantalla de vistazo: un margen calculado sobre una
+  // fracción de la venta se lee como el margen del negocio y engaña. Bajo
+  // 80% de cobertura se muestra sin número; el detalle está en Finanzas.
+  const cobertura = Number(k.cobertura_costo_pct)
+  const margenFiable = cobertura >= 80
   const margenPct = Number(k.venta_costeada) > 0
     ? Math.round((k.margen_mes / Number(k.venta_costeada)) * 1000) / 10
     : 0
@@ -74,19 +77,23 @@ export function ResumenKpis({ k }: { k: DashboardKpis }) {
         <StatCard label="Compras del mes" value={moneyShort(k.compras_mes)}
           hint="recibidas" icon={<Package className="h-4 w-4" />} />
         <StatCard label="Margen del mes"
-          value={sinCosto ? '—' : `${margenPct}%`}
-          hint={sinCosto ? 'falta cargar el costo' : money(k.margen_mes)}
-          tone={sinCosto ? 'default' : margenPct >= 20 ? 'positive' : 'warning'}
+          value={margenFiable ? `${margenPct}%` : '—'}
+          hint={margenFiable ? money(k.margen_mes)
+                : cobertura === 0 ? 'falta cargar el costo'
+                : `solo ${pct(cobertura)} tiene costo`}
+          tone={margenFiable ? (margenPct >= 20 ? 'positive' : 'warning') : 'default'}
           icon={<TrendingUp className="h-4 w-4" />} />
         <StatCard label="Pedidos en curso" value={String(k.pedidos_pendientes)}
           hint={`${k.pedidos_en_reparto} en reparto · ${k.pedidos_entregados_hoy} entregados hoy`}
           icon={<ClipboardList className="h-4 w-4" />} />
       </div>
 
-      {sinCosto && k.ventas_mes > 0 && (
+      {!margenFiable && k.ventas_mes > 0 && (
         <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-          El margen del mes no se puede calcular: las ventas facturadas todavía no tienen el
-          costo cargado. Entra al registrar las compras del período en Compras.
+          {cobertura === 0
+            ? 'El margen del mes no se puede calcular: las ventas facturadas todavía no tienen el costo cargado.'
+            : `El margen del mes no es representativo: solo ${pct(cobertura)} de la venta tiene costo cargado (${moneyShort(k.venta_costeada)} de ${moneyShort(k.ventas_mes)}).`}
+          {' '}El costo entra al registrar las compras del período en Compras.
         </p>
       )}
     </>

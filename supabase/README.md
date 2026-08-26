@@ -21,6 +21,7 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 | `dashboard_incluye_facturas` + `finance_kpis_margen_honesto` | `dashboard_kpis` y `finance_kpis` pasan a sumar los documentos importados además de los pedidos, sin doble conteo. La venta es siempre neta. El margen se calcula solo sobre la venta con costo cargado y se expone `cobertura_costo_pct`: sin eso, las facturas importadas (que no traen costo) daban 100% de margen. |
 | `reiniciar_cobranza` | `reset_collections(_confirm, _customer_id, _dry_run)`: borra los cobros y sus imputaciones para deshacer una prueba. Solo admin, exige escribir `REINICIAR COBRANZA`, simula por defecto y queda en `audit_logs`. No toca facturas, clientes ni productos. |
 | `saldo_cliente_y_serie_con_facturas` + `dashboard_riesgo_y_cobertura` | `v_customer_balance` (que alimenta el mapa del dashboard y la pantalla de Clientes) y `sales_series` pasan a incluir los documentos importados; sin esto los 39 clientes salían con saldo cero y el gráfico plano. `dashboard_kpis` suma `vencido_grave` (+30 días), `documentos_mes`, `documentos_por_cobrar`, `clientes_con_deuda` y `cobertura_costo_pct`. |
+| `corregir_iva_y_costos_importados` | Quita el `default 0` de `impuestos`/`costo_unit`/`costo_total` en `sales_import_rows`: con 0 el respaldo `coalesce(impuestos, bruto - neto)` nunca se activaba y los documentos importados quedaban con IVA en cero. Recalcula el IVA de lo ya cargado. |
 
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 
