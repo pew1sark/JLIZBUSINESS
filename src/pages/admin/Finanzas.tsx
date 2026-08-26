@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertTriangle, Download, MessageCircle, TrendingDown, TrendingUp, Wallet,
+  AlertTriangle, Download, MessageCircle, Search, TrendingDown, TrendingUp, Wallet,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { PaymentMethod } from '../../lib/types'
 import { PAYMENT_METHOD_LABEL } from '../../lib/constants'
 import { dateShort, money, moneyShort, pct } from '../../lib/format'
 import { descargarCsv } from '../../lib/csv'
+import { FiltroPeriodo } from '../../components/Filtros'
+import { rangoDe, type Periodo } from '../../lib/periodo'
 import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
 
 interface Kpis {
@@ -83,6 +85,8 @@ export function Finanzas() {
   const [pestana, setPestana] = useState<Pestana>('cobranza')
   const [cobrar, setCobrar] = useState<Cobrar | null>(null)
   const [pagar, setPagar] = useState<Pagar | null>(null)
+  const [buscar, setBuscar] = useState('')
+  const [periodo, setPeriodo] = useState<Periodo>(() => rangoDe('todo'))
 
   const kpis = useQuery({
     queryKey: ['finance-kpis'],
@@ -117,6 +121,34 @@ export function Finanzas() {
     },
   })
 
+
+  // Cobranza y pagos comparten buscador y período: son la misma pregunta
+  // ("qué debo / qué me deben") mirada desde los dos lados.
+  const { desde, hasta } = periodo
+  const cobrarFiltrado = useMemo(() => {
+    const t = buscar.trim().toLowerCase()
+    return (porCobrar.data ?? []).filter((c) => {
+      const f = c.due_date?.slice(0, 10)
+      if ((desde || hasta) && !f) return false
+      if (desde && f && f < desde) return false
+      if (hasta && f && f > hasta) return false
+      return !t || c.cliente.toLowerCase().includes(t)
+        || (c.invoice_number ?? '').toLowerCase().includes(t)
+        || c.code.toLowerCase().includes(t)
+    })
+  }, [porCobrar.data, buscar, desde, hasta])
+
+  const pagarFiltrado = useMemo(() => {
+    const t = buscar.trim().toLowerCase()
+    return (porPagar.data ?? []).filter((p) => {
+      const f = p.issued_at?.slice(0, 10)
+      if ((desde || hasta) && !f) return false
+      if (desde && f && f < desde) return false
+      if (hasta && f && f > hasta) return false
+      return !t || p.proveedor.toLowerCase().includes(t) || p.code.toLowerCase().includes(t)
+    })
+  }, [porPagar.data, buscar, desde, hasta])
+
   function refrescar() {
     qc.invalidateQueries({ queryKey: ['finance-kpis'] })
     qc.invalidateQueries({ queryKey: ['cuentas-cobrar'] })
@@ -136,7 +168,7 @@ export function Finanzas() {
 
   function exportarCobranza() {
     const filas = [['Pedido', 'Cliente', 'Vence', 'Total', 'Pagado', 'Saldo', 'Días de atraso', 'Factura']]
-    for (const c of porCobrar.data ?? []) {
+    for (const c of cobrarFiltrado) {
       filas.push([c.code, c.cliente, c.due_date ?? '', String(c.total), String(c.amount_paid),
         String(c.saldo), String(c.dias_atraso), c.invoice_number ?? ''])
     }
@@ -227,8 +259,8 @@ export function Finanzas() {
 
       <div className="mt-4 mb-3 flex gap-1 rounded-lg bg-slate-200/60 p-1 text-sm sm:w-fit">
         {([
-          ['cobranza', `Cobranza${porCobrar.data?.length ? ` (${porCobrar.data.length})` : ''}`],
-          ['pagos', `Pagos a proveedores${porPagar.data?.length ? ` (${porPagar.data.length})` : ''}`],
+          ['cobranza', `Cobranza${cobrarFiltrado.length ? ` (${cobrarFiltrado.length})` : ''}`],
+          ['pagos', `Pagos a proveedores${pagarFiltrado.length ? ` (${pagarFiltrado.length})` : ''}`],
           ['rentabilidad', 'Rentabilidad'],
         ] as [Pestana, string][]).map(([k2, label]) => (
           <button
@@ -243,6 +275,23 @@ export function Finanzas() {
         ))}
       </div>
 
+      {(pestana === 'cobranza' || pestana === 'pagos') && (
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400" />
+            <input className="input pl-9"
+              placeholder={pestana === 'cobranza' ? 'Buscar cliente, factura o código…' : 'Buscar proveedor o código…'}
+              value={buscar} onChange={(e) => setBuscar(e.target.value)} />
+          </div>
+          <FiltroPeriodo valor={periodo} onChange={setPeriodo} />
+          <span className="text-xs text-slate-400">
+            {pestana === 'cobranza'
+              ? `${cobrarFiltrado.length} de ${porCobrar.data?.length ?? 0}`
+              : `${pagarFiltrado.length} de ${porPagar.data?.length ?? 0}`}
+          </span>
+        </div>
+      )}
+
       {pestana === 'cobranza' && (
         <>
           <div className="mb-3 flex justify-end">
@@ -251,10 +300,10 @@ export function Finanzas() {
             </button>
           </div>
           {porCobrar.isLoading && <Skeleton className="h-56" />}
-          {porCobrar.data?.length === 0 && (
+          {cobrarFiltrado.length === 0 && !porCobrar.isLoading && (
             <Card><EmptyState title="No hay nada pendiente de cobro" /></Card>
           )}
-          {!!porCobrar.data?.length && (
+          {!!cobrarFiltrado.length && (
             <TableWrap>
               <thead className="bg-slate-50">
                 <tr>
@@ -267,7 +316,7 @@ export function Finanzas() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {porCobrar.data.map((c) => (
+                {cobrarFiltrado.map((c) => (
                   <tr key={c.ref_id} className="hover:bg-slate-50">
                     <td className="td font-medium text-slate-900">{c.cliente}</td>
                     <td className="td">
@@ -316,10 +365,10 @@ export function Finanzas() {
       {pestana === 'pagos' && (
         <>
           {porPagar.isLoading && <Skeleton className="h-48" />}
-          {porPagar.data?.length === 0 && (
+          {pagarFiltrado.length === 0 && !porPagar.isLoading && (
             <Card><EmptyState title="No hay compras pendientes de pago" /></Card>
           )}
-          {!!porPagar.data?.length && (
+          {!!pagarFiltrado.length && (
             <TableWrap>
               <thead className="bg-slate-50">
                 <tr>
@@ -333,7 +382,7 @@ export function Finanzas() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {porPagar.data.map((p) => (
+                {pagarFiltrado.map((p) => (
                   <tr key={p.ref_id} className="hover:bg-slate-50">
                     <td className="td font-medium text-slate-900">{p.proveedor}</td>
                     <td className="td">

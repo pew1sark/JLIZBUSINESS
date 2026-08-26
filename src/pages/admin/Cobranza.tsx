@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, ArrowRightLeft, Check, Clock, Download, Inbox, Link2, MessageCircle,
@@ -12,6 +12,8 @@ import type {
 import { PAYMENT_METHOD_LABEL } from '../../lib/constants'
 import { dateShort, dateTime, money, moneyShort } from '../../lib/format'
 import { descargarCsv } from '../../lib/csv'
+import { FiltroPeriodo, Paginador } from '../../components/Filtros'
+import { rangoDe, type Periodo } from '../../lib/periodo'
 import {
   Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap,
 } from '../../components/ui'
@@ -30,6 +32,9 @@ export function Cobranza() {
   const qc = useQueryClient()
   const [pestana, setPestana] = useState<Pestana>('clientes')
   const [buscar, setBuscar] = useState('')
+  const [periodo, setPeriodo] = useState<Periodo>(() => rangoDe('todo'))
+  const [pagina, setPagina] = useState(0)
+  const [porPagina, setPorPagina] = useState(50)
   const [cartola, setCartola] = useState<string | null>(null)
   const [cobrar, setCobrar] = useState<{ customer_id: string; cliente: string } | null>(null)
   const [reimputar, setReimputar] = useState<PagoSinImputar | null>(null)
@@ -102,9 +107,21 @@ export function Cobranza() {
     (c) => Number(c.deuda_total) > 0 || Number(c.nota_credito) > 0 || Number(c.pago_a_cuenta) > 0,
   ).filter((c) => !q || c.cliente.toLowerCase().includes(q) || (c.rut ?? '').includes(q))
 
-  const documentosFiltrados = (documentos.data ?? []).filter(
-    (d) => !q || d.cliente.toLowerCase().includes(q) || (d.doc_number ?? '').includes(q),
-  )
+  // El filtro de documentos corre sobre la fecha de VENCIMIENTO: en
+  // cobranza la pregunta es cuándo hay que cobrar, no cuándo se vendió.
+  const documentosFiltrados = (documentos.data ?? []).filter((d) => {
+    const f = d.due_date?.slice(0, 10)
+    if ((periodo.desde || periodo.hasta) && !f) return false
+    if (periodo.desde && f && f < periodo.desde) return false
+    if (periodo.hasta && f && f > periodo.hasta) return false
+    return !q || d.cliente.toLowerCase().includes(q)
+      || (d.doc_number ?? '').includes(q)
+      || d.code.toLowerCase().includes(q)
+  })
+
+  useEffect(() => { setPagina(0) }, [buscar, periodo.desde, periodo.hasta, pestana])
+
+  const documentosPagina = documentosFiltrados.slice(pagina * porPagina, (pagina + 1) * porPagina)
 
   function exportarCartera() {
     const filas: (string | number)[][] = [[
@@ -185,6 +202,9 @@ export function Cobranza() {
               <input className="input pl-9" placeholder="Buscar cliente, RUT o factura…"
                 value={buscar} onChange={(e) => setBuscar(e.target.value)} />
             </div>
+            {pestana === 'documentos' && (
+              <FiltroPeriodo valor={periodo} onChange={setPeriodo} />
+            )}
             <button className="btn-secondary ml-auto"
               onClick={pestana === 'clientes' ? exportarCartera : exportarDocumentos}>
               <Download className="h-4 w-4" /> Exportar
@@ -199,7 +219,15 @@ export function Cobranza() {
       )}
 
       {pestana === 'documentos' && (
-        <TablaDocumentos filas={documentosFiltrados} cargando={documentos.isLoading} />
+        <>
+          <TablaDocumentos filas={documentosPagina} cargando={documentos.isLoading} />
+          {documentosFiltrados.length > 0 && (
+            <div className="card mt-3">
+              <Paginador total={documentosFiltrados.length} pagina={pagina} porPagina={porPagina}
+                onPagina={setPagina} onPorPagina={setPorPagina} />
+            </div>
+          )}
+        </>
       )}
 
       {pestana === 'pagos' && (
@@ -341,7 +369,7 @@ function TablaDocumentos({ filas, cargando }: { filas: CuentaPorCobrar[]; cargan
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
-        {filas.slice(0, 500).map((d) => (
+        {filas.map((d) => (
           <tr key={`${d.origen}-${d.ref_id}`} className="hover:bg-slate-50">
             <td className="td">
               <p className="font-medium text-navy-900">{d.doc_number ?? d.code}</p>

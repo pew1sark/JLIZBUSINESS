@@ -1,0 +1,18 @@
+-- ============================================================
+-- Contactos por función y gastos operacionales
+--
+-- 1. `customer_contacts` — en un restaurante quien pide el pescado no
+--    es quien paga la factura. Mezclarlos en un solo teléfono hace que
+--    el recordatorio de cobro le llegue al chef y la confirmación del
+--    pedido al contador. Roles: logistica, finanzas, gerencia, otro.
+--    Un solo principal por función y cliente (índice único parcial).
+--    `v_contacto_cobranza` resuelve a quién escribir para cobrar:
+--    finanzas si existe, si no el contacto del cliente.
+--
+-- 2. `v_gastos_operacionales` — todo lo que NO es mercadería, sacado
+--    de las líneas del DTE ya clasificadas. La categoría se deduce de
+--    la descripción porque el documento tributario no trae un campo de
+--    categoría: combustible, peajes, servicios, banco, contabilidad,
+--    vehículos, insumos.
+--
+-- Aplicado como `contactos_cliente_y_gastos`.

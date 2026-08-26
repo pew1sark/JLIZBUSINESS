@@ -43,10 +43,12 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
       const like = `%${q}%`
       const [orders, customers, products, lots, suppliers] = await Promise.all([
         supabase.from('orders').select('id, code, total, status, customers(name)').ilike('code', like).limit(5),
-        supabase.from('customers').select('id, name, comuna, customer_type').ilike('name', like).limit(5),
+        supabase.from('customers').select('id, name, comuna, customer_type')
+          .or(`name.ilike.${like},rut.ilike.${like},email.ilike.${like},phone.ilike.${like}`).limit(5),
         supabase.from('products').select('id, name, sku, sale_price').or(`name.ilike.${like},sku.ilike.${like}`).limit(5),
         supabase.from('inventory_lots').select('id, code, quantity_on_hand, products(name)').ilike('code', like).limit(5),
-        supabase.from('suppliers').select('id, name, comuna').ilike('name', like).limit(5),
+        supabase.from('suppliers').select('id, name, comuna')
+          .or(`name.ilike.${like},rut.ilike.${like}`).limit(5),
       ])
       if (cancelled) return
 
@@ -100,7 +102,7 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
             autoFocus
             value={term}
             onChange={(e) => setTerm(e.target.value)}
-            placeholder="PED-2026-000145, Restaurante, Salmón, LOTE-…"
+            placeholder="Factura, RUT, cliente, proveedor, producto, lote…"
             className="flex-1 py-3.5 text-sm outline-none placeholder:text-slate-400"
           />
           <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100">

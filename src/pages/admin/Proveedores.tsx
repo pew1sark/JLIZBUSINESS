@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MessageCircle, Pencil, Phone, Plus, Star } from 'lucide-react'
+import { MessageCircle, Pencil, Phone, Plus, Star, Search } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useSuppliers } from '../../lib/queries'
 import type { Supplier } from '../../lib/types'
@@ -33,6 +33,22 @@ export function Proveedores() {
   const proveedores = useSuppliers()
   const [form, setForm] = useState<Form | null>(null)
   const [detalle, setDetalle] = useState<Supplier | null>(null)
+  const [buscar, setBuscar] = useState('')
+
+  // Con 62 proveedores una lista plana ya no se recorre a ojo. Se busca
+  // por RUT además del nombre: es lo que aparece en la factura.
+  const filtrados = useMemo(() => {
+    const t = buscar.trim().toLowerCase()
+    const lista = proveedores.data ?? []
+    if (!t) return lista
+    return lista.filter((s) =>
+      s.name.toLowerCase().includes(t)
+      || (s.rut ?? '').toLowerCase().includes(t)
+      || (s.contact_name ?? '').toLowerCase().includes(t)
+      || (s.email ?? '').toLowerCase().includes(t)
+      || (s.phone ?? '').toLowerCase().includes(t)
+      || (s.comuna ?? '').toLowerCase().includes(t))
+  }, [proveedores.data, buscar])
 
   const compras = useQuery({
     queryKey: ['supplier-totals'],
@@ -114,19 +130,35 @@ export function Proveedores() {
         title="Proveedores"
         subtitle="Fichas, condiciones de pago y precios históricos por producto"
         actions={
-          <button onClick={() => setForm(vacio)} className="btn-primary">
-            <Plus className="h-4 w-4" /> Nuevo proveedor
-          </button>
+          <>
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400" />
+              <input className="input w-56 pl-9" placeholder="Buscar nombre o RUT…"
+                value={buscar} onChange={(e) => setBuscar(e.target.value)} />
+            </div>
+            <button onClick={() => setForm(vacio)} className="btn-primary">
+              <Plus className="h-4 w-4" /> Nuevo proveedor
+            </button>
+          </>
         }
       />
 
       {proveedores.isError && <ErrorState error={proveedores.error} />}
       {proveedores.isLoading && <Skeleton className="h-48" />}
-      {proveedores.data?.length === 0 && (
-        <Card><EmptyState title="Todavía no hay proveedores" hint="El negocio trabaja con 6 proveedores habituales del terminal pesquero." /></Card>
+      {!proveedores.isLoading && filtrados.length === 0 && (
+        <Card>
+          <EmptyState title={buscar ? 'Ningún proveedor calza con la búsqueda' : 'Todavía no hay proveedores'}
+            hint={buscar ? 'Prueba con el RUT o parte del nombre.' : undefined} />
+        </Card>
       )}
 
-      {!!proveedores.data?.length && (
+      {!!filtrados.length && (
+        <p className="mb-2 text-xs text-slate-400">
+          {filtrados.length} de {proveedores.data?.length ?? 0} proveedores
+        </p>
+      )}
+
+      {!!filtrados.length && (
         <TableWrap>
           <thead className="bg-slate-50">
             <tr>
@@ -140,7 +172,7 @@ export function Proveedores() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {proveedores.data.map((s) => {
+            {filtrados.map((s) => {
               const t = compras.data?.[s.id]
               return (
                 <tr key={s.id} className="hover:bg-slate-50">

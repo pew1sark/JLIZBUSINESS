@@ -13,6 +13,7 @@ import {
   PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE,
 } from '../../lib/constants'
 import { dateShort, dateTime, kg, money, moneyShort, relative } from '../../lib/format'
+import { ContactosCliente } from '../../components/ContactosCliente'
 import { Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
 
 type Pestana = 'pedidos' | 'productos' | 'pagos'
@@ -255,7 +256,6 @@ export function ClienteDetalle() {
             {([
               ['Empresa', c.company],
               ['RUT', c.rut],
-              ['Quién pide', c.contact_name],
               ['Teléfono', c.phone],
               ['Correo', c.email],
               ['Dirección', c.address],
@@ -271,6 +271,10 @@ export function ClienteDetalle() {
             ))}
           </div>
         </Card>
+      </div>
+
+      <div className="mt-4">
+        <ContactosCliente customerId={c.id} />
       </div>
 
       <div className="mt-4 mb-3 flex gap-1 rounded-lg bg-slate-200/60 p-1 text-sm sm:w-fit">
