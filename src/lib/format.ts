@@ -23,11 +23,23 @@ export const pct = (v: number | null | undefined) => `${num.format(Number(v ?? 0
 export const margin = (total: number, cost: number) =>
   total > 0 ? Math.round(((total - cost) / total) * 1000) / 10 : 0
 
+/**
+ * Las columnas `date` de Postgres llegan como '2026-09-24' y `new Date()` las lee
+ * como medianoche UTC, que en Chile es el día anterior. Un vencimiento corrido un
+ * día es un error de cobranza, así que las fechas sin hora se arman como locales.
+ */
+const aFecha = (v: string) => {
+  const soloFecha = /^\d{4}-\d{2}-\d{2}$/.exec(v)
+  if (!soloFecha) return new Date(v)
+  const [a, m, d] = v.split('-').map(Number)
+  return new Date(a, m - 1, d)
+}
+
 export const dateShort = (v: string | null | undefined) =>
-  v ? new Date(v).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
+  v ? aFecha(v).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
 
 export const dateLong = (v: string | null | undefined) =>
-  v ? new Date(v).toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'
+  v ? aFecha(v).toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'
 
 export const dateTime = (v: string | null | undefined) =>
   v

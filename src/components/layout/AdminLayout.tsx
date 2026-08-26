@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   BarChart3, Bell, Boxes, ClipboardCheck, ClipboardList, Fish, LayoutDashboard, LogOut, Menu, Package,
-  FileText, History, Receipt, Search, Settings, ShieldCheck, ShoppingCart, Truck, Users, Wallet, X,
+  FileText, HandCoins, History, Receipt, Search, Settings, ShieldCheck, ShoppingCart, Truck, Users, Wallet, X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../../context/AuthContext'
@@ -21,6 +21,7 @@ const NAV = [
   { to: '/proveedores', label: 'Proveedores', icon: Package },
   { to: '/clientes', label: 'Clientes', icon: Users },
   { to: '/entregas', label: 'Entregas', icon: Truck },
+  { to: '/cobranza', label: 'Cobranza', icon: HandCoins },
   { to: '/finanzas', label: 'Finanzas', icon: Wallet },
   { to: '/reportes', label: 'Reportes', icon: BarChart3 },
   { to: '/historico', label: 'Histórico', icon: FileText },

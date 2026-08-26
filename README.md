@@ -3,11 +3,11 @@
 Sistema de gestión integral (ERP/POS) para una distribuidora de pescado fresco:
 compra → recepción → inventario → venta → preparación → despacho → entrega → pago → rentabilidad.
 
-**Estado: fases 1 a 5 completas + portal de trabajadores + control de cuentas** — base de datos, seguridad, autenticación, roles, las dos interfaces,
+**Estado: fases 1 a 5 completas + portal de trabajadores + control de cuentas + cobranza** — base de datos, seguridad, autenticación, roles, las dos interfaces,
 dashboard, productos, inventario, lotes, procesamiento, compras, proveedores, clientes, pedidos,
 ventas, entregas, finanzas, reportes exportables, auditoría, cuentas y accesos, configuración, y el
 portal móvil del personal (pedidos, hoja de ruta, stock y reportes) sin acceso a información
-financiera. El modelo está ajustado a las 107 respuestas del levantamiento. El detalle está en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
+financiera, y el módulo de **cobranza** con portal de pagos para el cliente. El modelo está ajustado a las 107 respuestas del levantamiento. El detalle está en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 
 ## Stack
 
@@ -39,16 +39,51 @@ update public.profiles set role = 'reparto' where email = 'persona@empresa.cl';
 
 Roles disponibles: `admin`, `ventas`, `compras`, `inventario`, `empaque`, `reparto`.
 
+## Cobranza y portal de pagos
+
+El problema que resuelve: los clientes no pagan las facturas en orden. Uno transfiere un monto
+que cubre tres facturas, otro abona sin decir a cuál corresponde, otro paga la última y deja la
+primera colgando. Sin una capa de imputación no hay forma de saber qué se pagó.
+
+- **`payment_allocations`** — un pago se reparte entre N documentos. Es la pieza que faltaba:
+  antes un pago solo podía apuntar a una factura (`payments.order_id`), así que un abono que
+  cubría varias no tenía dónde registrarse.
+- **Imputación automática o manual.** Por defecto el pago se aplica a las facturas con
+  vencimiento más antiguo. Se puede repartir a mano y reimputar después sin perder el rastro.
+- **Pago a cuenta.** Si llega plata sin destino claro, queda como saldo a favor del cliente y
+  aparece en *Cobranza → Pagos* hasta que se sepa a qué factura va.
+- **Cartola por cliente** con antigüedad por tramos (por vencer, 1-15, 16-30, 31-60, +60 días).
+- **Portal del cliente** en `#/portal/:token` — el cliente ve sus facturas impagas, los
+  vencimientos y su deuda total, y puede informar una transferencia. El enlace se genera desde
+  la cartola y se envía por WhatsApp; no necesita cuenta ni contraseña, y se puede revocar.
+  Solo expone datos de ese cliente: nunca costos ni márgenes.
+
+### Importar las ventas del mes
+
+Las facturas se emiten en el sistema de facturación electrónica, no en la plataforma. El
+detalle de ventas se carga en `sales_import_rows` y se transforma con:
+
+```sql
+select public.process_sales_import('<batch_id>'::uuid, 30);  -- 30 = días de plazo
+```
+
+Crea los clientes y productos que falten (reconocidos por RUT y SKU), los documentos y sus
+líneas. Es idempotente: volver a cargar el mismo período no duplica nada. Las notas de crédito
+entran con total negativo y se descuentan del saldo del cliente.
+
 ## Base de datos
 
 Proyecto Supabase: **JLIZBUSINESS** (`owfvuusxfvzjgxfmllpt`, región us-east-1).
 
-- 30 tablas, 3 vistas, RLS en todas las tablas.
+- Tablas de cobranza: `invoices`, `invoice_items`, `payment_allocations`, `payment_reports`,
+  `customer_portal_tokens`, `sales_import_batches`, `sales_import_rows`. RLS en todas.
 - Funciones de negocio: `receive_purchase`, `confirm_order`, `start_preparation`,
   `finish_preparation`, `dispatch_order`, `complete_delivery`, `register_loss`,
   `adjust_lot_quantity`, `dashboard_kpis`, `sales_series`.
-- Datos de demostración cargados (13 productos, 6 clientes, 3 proveedores, 6 compras,
-  26 pedidos en distintos estados, mermas y pagos).
+- Funciones de cobranza: `register_customer_payment`, `allocate_payment`, `auto_allocate_payment`,
+  `customer_statement`, `process_sales_import`, `portal_get`, `portal_report_payment`.
+- Datos reales cargados: 38 clientes, 41 productos y 745 documentos de venta del período
+  1-jun a 26-ago 2026 ($136.815.280 brutos), importados desde el detalle de ventas.
 
 Ver [`supabase/README.md`](supabase/README.md) para trabajar con las migraciones.
 

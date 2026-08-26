@@ -8,13 +8,14 @@ import type { AppRole } from './types'
 export type Resource =
   | 'dashboard' | 'products' | 'inventory' | 'lots' | 'movements' | 'purchases' | 'suppliers'
   | 'customers' | 'orders' | 'deliveries' | 'routes' | 'payments' | 'losses' | 'price_lists'
-  | 'reports' | 'workers' | 'audit' | 'settings'
+  | 'reports' | 'workers' | 'audit' | 'settings' | 'invoices'
 
 export type Action = 'read' | 'create' | 'update' | 'delete' | 'approve'
 
 const MATRIX: Record<Exclude<AppRole, 'admin'>, Partial<Record<Resource, Action[]>>> = {
   finanzas: {
     payments: ['read', 'create', 'update'],
+    invoices: ['read', 'create', 'update'],
     orders: ['read'],
     customers: ['read'],
     suppliers: ['read'],
@@ -27,6 +28,7 @@ const MATRIX: Record<Exclude<AppRole, 'admin'>, Partial<Record<Resource, Action[
     products: ['read'],
     inventory: ['read'],
     payments: ['read', 'create'],
+    invoices: ['read'],
     price_lists: ['read'],
     deliveries: ['read'],
     reports: ['read'],

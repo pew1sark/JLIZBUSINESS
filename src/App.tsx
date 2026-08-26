@@ -11,6 +11,7 @@ const Dashboard = lazy(() => import('./pages/admin/Dashboard').then((m) => ({ de
 const Entregas = lazy(() => import('./pages/admin/Entregas').then((m) => ({ default: m.Entregas })))
 const Reportes = lazy(() => import('./pages/admin/Reportes').then((m) => ({ default: m.Reportes })))
 const Finanzas = lazy(() => import('./pages/admin/Finanzas').then((m) => ({ default: m.Finanzas })))
+const Cobranza = lazy(() => import('./pages/admin/Cobranza').then((m) => ({ default: m.Cobranza })))
 const Auditoria = lazy(() => import('./pages/admin/Auditoria').then((m) => ({ default: m.Auditoria })))
 const Trabajadores = lazy(() => import('./pages/admin/Trabajadores').then((m) => ({ default: m.Trabajadores })))
 const Configuracion = lazy(() => import('./pages/admin/Configuracion').then((m) => ({ default: m.Configuracion })))
@@ -26,6 +27,7 @@ const Historico = lazy(() => import('./pages/admin/Historico').then((m) => ({ de
 const Levantamiento = lazy(() => import('./pages/admin/Levantamiento').then((m) => ({ default: m.Levantamiento })))
 import { Survey } from './pages/Survey'
 const Catalogo = lazy(() => import('./pages/Catalogo').then((m) => ({ default: m.Catalogo })))
+const PortalPagos = lazy(() => import('./pages/PortalPagos').then((m) => ({ default: m.PortalPagos })))
 import { WorkerHome } from './pages/worker/WorkerHome'
 import { Avisos, Perfil } from './pages/worker/WorkerPages'
 const WorkerPedidos = lazy(() => import('./pages/worker/WorkerPedidos').then((m) => ({ default: m.WorkerPedidos })))
@@ -51,6 +53,7 @@ export default function App() {
             {/* Formularios públicos: el cliente entra con un enlace, sin cuenta */}
             <Route path="/levantamiento/:token" element={<Survey />} />
             <Route path="/catalogo/:token" element={<Catalogo />} />
+            <Route path="/portal/:token" element={<PortalPagos />} />
 
             {/* INTERFAZ A · Administración (escritorio) */}
             <Route
@@ -73,6 +76,7 @@ export default function App() {
               <Route path="/clientes" element={<Clientes />} />
               <Route path="/clientes/:id" element={<ClienteDetalle />} />
               <Route path="/entregas" element={<Entregas />} />
+              <Route path="/cobranza" element={<Cobranza />} />
               <Route path="/finanzas" element={<Finanzas />} />
               <Route path="/reportes" element={<Reportes />} />
               <Route path="/trabajadores" element={<Trabajadores />} />

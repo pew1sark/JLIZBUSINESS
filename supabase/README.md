@@ -12,6 +12,12 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 | `05_harden_function_grants` | Revoca `execute` a `anon` en todas las funciones y quita acceso anónimo a las tablas. |
 | `06_seed_catalog`, `09_seed_orders` | Datos de demostración. |
 | `08_fix_payment_status_cast` | Corrección de casteo de enum en el trigger de pagos. |
+| `ar_documentos_y_pagos` | **Cuentas por cobrar.** `invoices` / `invoice_items` (documentos tributarios), `payment_allocations` (un pago repartido entre varias facturas), `customer_portal_tokens`, `payment_reports`, RLS y permisos del recurso `invoices`. |
+| `ar_vistas` | `v_cuentas_por_cobrar` reescrita para incluir facturas, `v_notas_credito_pendientes`, `v_pagos_sin_imputar` y `v_estado_cuenta_cliente` (antigüedad por tramos). |
+| `ar_funciones_imputacion` | `recalc_receivable`, `allocate_payment`, `auto_allocate_payment` (imputación por vencimiento más antiguo), `register_customer_payment`, `void_payment`. `trg_apply_payment` queda solo con el lado de proveedores. |
+| `ar_cartola_y_portal` | `customer_statement`, `mark_overdue_orders` extendida a facturas, `finance_kpis` con documentos importados, ajuste `cobranza` en `settings`. |
+| `portal_pagos_cliente` | `portal_link`, `portal_revoke`, `portal_get` y `portal_report_payment` (las dos últimas con `execute` para `anon`), `confirm_payment_report`, `reject_payment_report`. |
+| `importacion_ventas` + `importacion_ventas_robusta` + `staging_fecha_texto` | `sales_import_batches` / `sales_import_rows` y `process_sales_import`: carga repetible del detalle de ventas del sistema de facturación electrónica. |
 
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 
@@ -35,3 +41,6 @@ Desde ahí, el flujo normal pasa a ser `supabase migration new <nombre>` + `supa
 2. Toda función nace con `set search_path = public` y sin `execute` para `anon`.
 3. La lógica que toca stock o dinero va en funciones `security definer`, nunca en el cliente.
 4. Nada de `delete` sobre datos históricos: se usan estados (`activo`, `cancelado`, `anulado`, `archivado`).
+5. Cuánto está pagado un documento **no se escribe a mano**: sale siempre de la suma de sus
+   `payment_allocations`, vía `recalc_receivable`. Es lo que permite reimputar un pago sin
+   que queden saldos fantasma.

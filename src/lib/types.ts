@@ -259,3 +259,128 @@ export interface DashboardKpis {
   cuentas_por_cobrar: number
   cuentas_vencidas: number
 }
+
+// ---------- COBRANZA ----------
+export type DocType = 'factura' | 'boleta' | 'nota_credito' | 'nota_debito'
+export type TramoAtraso = 'sin_plazo' | 'al_dia' | 'atraso_leve' | 'atraso_medio' | 'atraso_grave'
+
+export interface Invoice {
+  id: string
+  code: string
+  doc_type: DocType
+  doc_number: string
+  customer_id: string
+  order_id: string | null
+  issued_at: string
+  due_date: string | null
+  net_amount: number
+  tax_amount: number
+  total: number
+  amount_paid: number
+  payment_status: PaymentStatus
+  source: 'manual' | 'importado' | 'pedido'
+  related_doc_number: string | null
+  notes: string | null
+}
+
+/** Una fila de deuda viva, venga de una factura, un pedido o un saldo arrastrado. */
+export interface CuentaPorCobrar {
+  origen: 'factura' | 'pedido' | 'saldo_inicial'
+  ref_id: string
+  order_id: string | null
+  receivable_id: string | null
+  invoice_id: string | null
+  code: string
+  doc_type: string
+  doc_number: string | null
+  customer_id: string
+  cliente: string
+  phone: string | null
+  whatsapp: string | null
+  email: string | null
+  issued_at: string
+  due_date: string | null
+  total: number
+  amount_paid: number
+  saldo: number
+  invoice_number: string | null
+  dias_atraso: number
+  tramo: TramoAtraso
+}
+
+export interface EstadoCuentaCliente {
+  customer_id: string
+  cliente: string
+  rut: string | null
+  comuna: string | null
+  phone: string | null
+  whatsapp: string | null
+  email: string | null
+  credit_limit: number
+  payment_terms_days: number
+  documentos: number
+  deuda_total: number
+  por_vencer: number
+  atraso_1_15: number
+  atraso_16_30: number
+  atraso_31_60: number
+  atraso_60_mas: number
+  vencido: number
+  peor_atraso: number
+  vence_primero: string | null
+  nota_credito: number
+  pago_a_cuenta: number
+  saldo_neto: number
+  ultimo_pago: string | null
+  sobre_limite: boolean
+}
+
+export interface PagoSinImputar {
+  id: string
+  code: string
+  customer_id: string
+  cliente: string
+  amount: number
+  method: PaymentMethod
+  paid_at: string
+  reference: string | null
+  notes: string | null
+  imputado: number
+  sin_imputar: number
+}
+
+/** Una imputación: qué parte de un pago cubrió qué documento. */
+export interface Imputacion {
+  kind: 'factura' | 'pedido' | 'saldo_inicial'
+  id: string
+  amount: number
+}
+
+export interface PagoCartola {
+  id: string
+  code: string
+  amount: number
+  method: PaymentMethod
+  paid_at: string
+  reference: string | null
+  notes: string | null
+  imputado: number
+  sin_imputar: number
+  aplicado_a: { amount: number; documento: string; tipo: string }[]
+}
+
+export interface AvisoPago {
+  id: string
+  code: string
+  customer_id: string
+  amount: number
+  method: PaymentMethod
+  paid_at: string
+  reference: string | null
+  invoice_ids: string[]
+  notes: string | null
+  status: 'pendiente' | 'confirmado' | 'rechazado'
+  review_notes: string | null
+  created_at: string
+  customers?: { name: string } | null
+}
