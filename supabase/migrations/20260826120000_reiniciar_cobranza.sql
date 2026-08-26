@@ -1,0 +1,16 @@
+-- ============================================================
+-- REINICIAR COBRANZA
+-- Borra los cobros registrados y sus imputaciones para dejar la
+-- cartera como estaba. Sirve para deshacer una prueba.
+--
+-- NUNCA toca facturas, pedidos, clientes ni productos: solo los
+-- pagos. Los saldos de cada documento se recalculan solos, porque
+-- `amount_paid` sale de las imputaciones y el trigger corre al
+-- borrarlas en cascada.
+--
+-- Sigue la convención de `purge_demo_data`: frase exacta y
+-- `_dry_run` en true por defecto, para que el primer intento
+-- muestre qué se borraría sin borrar nada.
+--
+-- Aplicada al proyecto como la migración `reiniciar_cobranza`.
+-- El detalle está en supabase/README.md.

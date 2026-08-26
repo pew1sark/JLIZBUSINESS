@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, ArrowRightLeft, Check, Clock, Download, Inbox, Link2, MessageCircle,
-  Search, Users, Wallet, X,
+  RotateCcw, Search, Trash2, Users, Wallet, X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
@@ -204,7 +204,7 @@ export function Cobranza() {
 
       {pestana === 'pagos' && (
         <PanelPagos sinImputar={sinImputar.data ?? []} cargando={sinImputar.isLoading}
-          onImputar={setReimputar} />
+          onImputar={setReimputar} onHecho={refrescar} />
       )}
 
       {pestana === 'avisos' && (
@@ -374,12 +374,24 @@ const etiquetaDoc = (t: string) =>
 
 // ---------------------------------------------------------------- pagos
 function PanelPagos({
-  sinImputar, cargando, onImputar,
+  sinImputar, cargando, onImputar, onHecho,
 }: {
   sinImputar: PagoSinImputar[]
   cargando: boolean
   onImputar: (p: PagoSinImputar) => void
+  onHecho: () => void
 }) {
+  const [reiniciar, setReiniciar] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const anular = useMutation({
+    mutationFn: async ({ id, motivo }: { id: string; motivo: string }) => {
+      const { error } = await supabase.rpc('void_payment', { _payment_id: id, _reason: motivo })
+      if (error) throw error
+    },
+    onSuccess: onHecho,
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  })
   const pagos = useQuery({
     queryKey: ['cob-pagos-recientes'],
     queryFn: async () => {
@@ -401,6 +413,8 @@ function PanelPagos({
 
   return (
     <div className="space-y-4">
+      {error && <ErrorState error={error} />}
+
       {sinImputar.length > 0 && (
         <Card>
           <CardHeader title={`${sinImputar.length} pago(s) sin imputar`} />
@@ -458,12 +472,132 @@ function PanelPagos({
                     {resto > 0.5 && <span className="text-amber-600"> · {money(resto)} sin imputar</span>}
                   </p>
                 </div>
+                <button
+                  className="btn-secondary px-2.5 py-1.5 text-xs"
+                  title="Anular este cobro y devolver las facturas a su saldo anterior"
+                  disabled={anular.isPending}
+                  onClick={() => {
+                    const motivo = window.prompt(
+                      `Anular el cobro de ${p.customers?.name ?? ''} por ${money(p.amount)}.\n` +
+                      'Las facturas que cubrió vuelven a quedar con su saldo anterior.\n\n' +
+                      '¿Por qué se anula?',
+                    )
+                    if (motivo) anular.mutate({ id: p.id, motivo })
+                  }}>
+                  <Trash2 className="h-3.5 w-3.5" /> Anular
+                </button>
               </div>
             )
           })}
         </div>
+
+        {(pagos.data?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-5 py-3">
+            <p className="flex-1 text-xs text-slate-500">
+              ¿Estabas probando? Puedes borrar todos los cobros de una vez y dejar la cartera
+              como estaba. No toca facturas, clientes ni productos.
+            </p>
+            <button className="btn-secondary px-3 py-1.5 text-xs" onClick={() => setReiniciar(true)}>
+              <RotateCcw className="h-3.5 w-3.5" /> Reiniciar cobranza
+            </button>
+          </div>
+        )}
       </Card>
+
+      {reiniciar && (
+        <ModalReiniciar onClose={() => setReiniciar(false)}
+          onHecho={() => { setReiniciar(false); onHecho() }} />
+      )}
     </div>
+  )
+}
+
+/**
+ * Borrar cobros es irreversible, así que primero se simula y se muestra
+ * exactamente qué se va a borrar. Recién después se habilita el botón,
+ * y solo si se escribe la frase completa.
+ */
+function ModalReiniciar({ onClose, onHecho }: { onClose: () => void; onHecho: () => void }) {
+  const [frase, setFrase] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const previo = useQuery({
+    queryKey: ['reset-preview'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('reset_collections', {
+        _confirm: 'REINICIAR COBRANZA', _customer_id: null, _dry_run: true,
+      })
+      if (error) throw error
+      return data as {
+        pagos: number; monto: number; imputaciones: number; documentos_afectados: number
+        avisos_a_reabrir: number
+      }
+    },
+  })
+
+  const ejecutar = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc('reset_collections', {
+        _confirm: 'REINICIAR COBRANZA', _customer_id: null, _dry_run: false,
+      })
+      if (error) throw error
+    },
+    onSuccess: onHecho,
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  })
+
+  const listo = frase.trim().toUpperCase() === 'REINICIAR COBRANZA'
+
+  return (
+    <Modal open onClose={onClose} title="Reiniciar la cobranza"
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn-danger" disabled={!listo || ejecutar.isPending}
+            onClick={() => ejecutar.mutate()}>
+            {ejecutar.isPending ? 'Borrando…' : 'Borrar los cobros'}
+          </button>
+        </>
+      }>
+      <div className="space-y-4">
+        {error && <ErrorState error={error} />}
+        {previo.isLoading && <Skeleton className="h-24" />}
+        {previo.isError && <ErrorState error={previo.error} />}
+
+        {previo.data && (
+          <>
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm">
+              <p className="font-medium text-red-900">Se va a borrar:</p>
+              <ul className="mt-2 space-y-1 text-red-800">
+                <li>· {previo.data.pagos} cobro(s) por {money(previo.data.monto)}</li>
+                <li>· {previo.data.imputaciones} imputación(es)</li>
+                <li>· {previo.data.documentos_afectados} factura(s) vuelven a su saldo anterior</li>
+                {previo.data.avisos_a_reabrir > 0 && (
+                  <li>· {previo.data.avisos_a_reabrir} aviso(s) del portal vuelven a «pendiente»</li>
+                )}
+              </ul>
+            </div>
+
+            <p className="text-sm text-slate-600">
+              Las facturas, los clientes y los productos <span className="font-medium">no se tocan</span>.
+              Queda registrado en Auditoría quién lo hizo y cuándo.
+            </p>
+
+            {previo.data.pagos === 0 ? (
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                No hay cobros registrados: no hay nada que reiniciar.
+              </p>
+            ) : (
+              <label className="block">
+                <span className="label">Para confirmar, escribe: REINICIAR COBRANZA</span>
+                <input className="input" value={frase} placeholder="REINICIAR COBRANZA"
+                  onChange={(e) => setFrase(e.target.value)} />
+              </label>
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
   )
 }
 
