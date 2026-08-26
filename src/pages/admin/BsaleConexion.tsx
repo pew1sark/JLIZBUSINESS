@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Check, Link2, Loader2, PlugZap, RefreshCw, Stethoscope, Unplug } from 'lucide-react'
+import { AlertTriangle, Check, History, Link2, Loader2, PlugZap, RefreshCw, Stethoscope, Unplug } from 'lucide-react'
 import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { dateTime, relative } from '../../lib/format'
@@ -52,6 +52,8 @@ export function BsaleConexion() {
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
   const [sondas, setSondas] = useState<Record<string, any> | null>(null)
+  const [progreso, setProgreso] = useState<string[]>([])
+  const [corriendo, setCorriendo] = useState(false)
 
   const conexiones = useQuery({
     queryKey: ['bsale-conexiones'],
@@ -131,6 +133,76 @@ export function BsaleConexion() {
     },
     onError: (e) => { setAviso(null); setError(e instanceof Error ? e.message : String(e)) },
   })
+
+  /**
+   * Trae todo el histórico: recorre mes a mes hacia atrás hasta que
+   * encuentra varios meses seguidos sin documentos, después extrae el
+   * detalle de los XML y finalmente vuelca todo al ERP.
+   *
+   * Va secuencial a propósito: Bsale limita a 3.000 peticiones cada 300
+   * segundos y dispararlo todo en paralelo garantiza un 429.
+   */
+  async function traerHistorico() {
+    setCorriendo(true)
+    setError(null)
+    setAviso(null)
+    const log: string[] = []
+    const anota = (t: string) => { log.push(t); setProgreso([...log]) }
+
+    try {
+      const hoy = new Date()
+      let año = hoy.getFullYear()
+      let mes = hoy.getMonth() + 1
+      let vacios = 0
+      let totalDocs = 0
+
+      // 60 meses de tope: cinco años es más historia de la que existe.
+      for (let i = 0; i < 60 && vacios < 4; i++) {
+        const r = await invocar<{ resumen?: { documentos?: { guardados: number; leidos: number } } }>(
+          'bsale-sync', { resource: 'documentos', year: año, month: mes })
+        const leidos = r.resumen?.documentos?.leidos ?? 0
+        totalDocs += r.resumen?.documentos?.guardados ?? 0
+        anota(`${año}-${String(mes).padStart(2, '0')}: ${leidos} documento(s)`)
+        vacios = leidos === 0 ? vacios + 1 : 0
+        mes--
+        if (mes === 0) { mes = 12; año-- }
+      }
+      anota(`Libro de compras listo: ${totalDocs} documentos nuevos.`)
+
+      // Detalle desde los XML, por tandas, hasta que no quede ninguno.
+      let quedan = 1
+      let vueltas = 0
+      while (quedan > 0 && vueltas < 40) {
+        const r = await invocar<{ lineas: number; quedan: number; fallidos: number }>(
+          'bsale-xml', { max: 60 })
+        quedan = r.quedan
+        vueltas++
+        anota(`Detalle: ${r.lineas} línea(s)${r.fallidos ? `, ${r.fallidos} con error` : ''}` +
+              (quedan ? ` · quedan ${quedan}` : ' · completo'))
+      }
+
+      // Volcar al ERP y calcular costos.
+      const v = await supabase.rpc('bsale_apply_purchases', { _connection_id: null, _dry_run: false })
+      if (v.error) throw new Error(v.error.message)
+      anota(`ERP: ${(v.data as any)?.compras_creadas ?? 0} compra(s) y ${(v.data as any)?.proveedores_creados ?? 0} proveedor(es).`)
+
+      const c = await supabase.rpc('bsale_clasificar_items', { _dry_run: false })
+      if (c.error) throw new Error(c.error.message)
+      anota(`Clasificación: ${(c.data as any)?.mercaderia ?? 0} de mercadería, ${(c.data as any)?.gasto ?? 0} de gasto.`)
+
+      const k = await supabase.rpc('bsale_aplicar_costos', { _dry_run: false })
+      if (k.error) throw new Error(k.error.message)
+      anota(`Costos: ${(k.data as any)?.productos_con_costo ?? 0} producto(s), ` +
+            `${(k.data as any)?.lineas_de_venta_costeadas ?? 0} línea(s) de venta costeadas.`)
+
+      setAviso('Histórico cargado y aplicado.')
+      refrescar()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setCorriendo(false)
+    }
+  }
 
   const diagnosticar = useMutation({
     mutationFn: () => invocar<{ sondas: Record<string, any> }>('bsale-probe', {}),
@@ -220,6 +292,28 @@ export function BsaleConexion() {
                   Diagnosticar
                 </button>
               </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-emerald-200 pt-3">
+                <p className="flex-1 text-xs text-slate-600">
+                  <span className="font-medium">Traer todo el histórico</span> recorre mes a mes hacia
+                  atrás hasta agotar los registros, extrae el detalle de cada factura y lo vuelca al
+                  ERP con sus costos. Puede tardar varios minutos: no cierres esta pestaña.
+                </p>
+                <button className="btn-primary px-3 py-1.5 text-xs" disabled={corriendo}
+                  onClick={traerHistorico}>
+                  {corriendo
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <History className="h-3.5 w-3.5" />}
+                  Traer todo el histórico
+                </button>
+              </div>
+
+              {progreso.length > 0 && (
+                <div className="mt-3 max-h-56 overflow-y-auto rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-slate-200">
+                  {progreso.map((l, i) => <p key={i}>{l}</p>)}
+                  {corriendo && <p className="text-amber-300">trabajando…</p>}
+                </div>
+              )}
 
               <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-emerald-200 pt-3">
                 <p className="flex-1 text-xs text-slate-600">

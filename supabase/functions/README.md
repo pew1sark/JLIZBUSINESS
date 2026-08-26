@@ -6,7 +6,7 @@ vive en el proyecto Supabase; acá queda la referencia de qué hace cada una.
 | Función | JWT | Qué hace |
 |---|---|---|
 | `bsale-connect` | sí (admin) | Recibe el access token, **lo prueba contra `GET /v1/users.json?limit=1`** y solo si Bsale responde bien lo guarda cifrado en Vault y crea la conexión. El token nunca vuelve al navegador. |
-| `bsale-sync` | sí (admin) o `x-cron-secret` | Trae el libro de compras (`third_party_documents`, por año/mes), las recepciones (`stocks/receptions`) y sus detalles con costo. Va a ~8 req/s, reintenta con espera creciente ante 429/5xx, corta por número de páginas y guarda un cursor para retomar. |
+| `bsale-sync` | sí (admin) | Trae el libro de compras (`third_party_documents`, por año/mes), las recepciones (`stocks/receptions`) y sus detalles con costo. Va a ~8 req/s, reintenta con espera creciente ante 429/5xx, corta por número de páginas y guarda un cursor para retomar. |
 | `bsale-webhook` | **no** | Recibe los avisos de Bsale. Como la API no documenta firma, exige `?key=<BSALE_WEBHOOK_SECRET>` y trata el payload como no confiable: solo registra qué recurso releer. |
 
 ## Secretos que hay que configurar en Supabase
@@ -17,3 +17,17 @@ vive en el proyecto Supabase; acá queda la referencia de qué hace cada una.
 | `BSALE_CRON_SECRET` | Permite que un trabajo programado llame a `bsale-sync` sin sesión de usuario. |
 
 Se cargan en *Project Settings → Edge Functions → Secrets*. No van al repositorio.
+
+## Limitación conocida: la llamada desde un cron todavía no funciona
+
+`bsale-sync` y `bsale-xml` traen en el código una ruta alternativa de
+autorización por `x-cron-secret`, pensada para que un trabajo programado las
+invoque sin sesión de usuario. **Esa ruta hoy no se alcanza**: ambas están
+desplegadas con `verify_jwt: true`, así que Supabase rechaza la petición con
+401 antes de ejecutar el código. Para habilitarla hay que volver a desplegarlas
+con `verify_jwt: false` — la autorización propia que ya tienen (sesión de
+administrador **o** secreto de cron) sigue cerrando la puerta a llamadas
+anónimas.
+
+Mientras tanto la sincronización se dispara desde la aplicación, que sí manda
+la sesión: *Configuración → Conexión con Bsale*.

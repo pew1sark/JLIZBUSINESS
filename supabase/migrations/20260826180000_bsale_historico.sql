@@ -1,0 +1,9 @@
+-- Nota, no DDL. El traído de histórico no necesitó esquema nuevo:
+-- `process_sales_import` y el resto ya eran idempotentes por diseño
+-- (clave única por documento, y `purchases.bsale_document_id` enlazando
+-- 1 a 1), así que recorrer meses hacia atrás y volver a volcar no
+-- duplica nada.
+--
+-- El recorrido vive en la aplicación (Configuración → Conexión con
+-- Bsale → «Traer todo el histórico») y no en la base, porque necesita
+-- la sesión del administrador para invocar las Edge Functions.
