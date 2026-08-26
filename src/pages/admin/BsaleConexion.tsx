@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Check, Link2, Loader2, PlugZap, RefreshCw, Unplug } from 'lucide-react'
+import { AlertTriangle, Check, Link2, Loader2, PlugZap, RefreshCw, Stethoscope, Unplug } from 'lucide-react'
 import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { dateTime, relative } from '../../lib/format'
@@ -51,6 +51,7 @@ export function BsaleConexion() {
   const [label, setLabel] = useState('Pescadería Bilagay')
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
+  const [sondas, setSondas] = useState<Record<string, any> | null>(null)
 
   const conexiones = useQuery({
     queryKey: ['bsale-conexiones'],
@@ -97,6 +98,30 @@ export function BsaleConexion() {
       setAviso(`Sincronización lista: ${JSON.stringify((r as { resumen?: unknown }).resumen)}`)
       refrescar()
     },
+    onError: (e) => { setAviso(null); setError(e instanceof Error ? e.message : String(e)) },
+  })
+
+  const volcar = useMutation({
+    mutationFn: async (dryRun: boolean) => {
+      const { data, error } = await supabase.rpc('bsale_apply_purchases', {
+        _connection_id: null, _dry_run: dryRun,
+      })
+      if (error) throw error
+      return data as Record<string, unknown>
+    },
+    onSuccess: (r) => {
+      setError(null)
+      setAviso(r.dry_run
+        ? `Simulación: se crearían ${r.compras_a_crear} compra(s) por ${r.monto} y ${r.proveedores_a_crear} proveedor(es).`
+        : `Listo: ${r.compras_creadas} compra(s) y ${r.proveedores_creados} proveedor(es) creados.`)
+      refrescar()
+    },
+    onError: (e) => { setAviso(null); setError(e instanceof Error ? e.message : String(e)) },
+  })
+
+  const diagnosticar = useMutation({
+    mutationFn: () => invocar<{ sondas: Record<string, any> }>('bsale-probe', {}),
+    onSuccess: (r) => { setError(null); setAviso(null); setSondas(r.sondas) },
     onError: (e) => { setAviso(null); setError(e instanceof Error ? e.message : String(e)) },
   })
 
@@ -167,6 +192,28 @@ export function BsaleConexion() {
                   onClick={() => sincronizar.mutate({ resource: 'detalles', max_detalles: 120 })}>
                   Traer costos por producto
                 </button>
+                <button className="btn-secondary px-3 py-1.5 text-xs" disabled={diagnosticar.isPending}
+                  onClick={() => diagnosticar.mutate()}>
+                  {diagnosticar.isPending
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <Stethoscope className="h-3.5 w-3.5" />}
+                  Diagnosticar
+                </button>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-emerald-200 pt-3">
+                <p className="flex-1 text-xs text-slate-600">
+                  Pasar lo traído de Bsale a las compras del ERP (crea proveedores y compras que falten).
+                </p>
+                <button className="btn-secondary px-3 py-1.5 text-xs" disabled={volcar.isPending}
+                  onClick={() => volcar.mutate(true)}>
+                  Simular
+                </button>
+                <button className="btn-primary px-3 py-1.5 text-xs" disabled={volcar.isPending}
+                  onClick={() => volcar.mutate(false)}>
+                  {volcar.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Volcar al ERP
+                </button>
               </div>
 
               <p className="mt-3 text-xs text-slate-500">
@@ -201,6 +248,34 @@ export function BsaleConexion() {
           )}
         </div>
       </Card>
+
+      {sondas && (
+        <Card>
+          <CardHeader title="Diagnóstico: qué tiene esta cuenta de Bsale"
+            action={<button className="text-xs text-slate-400 hover:underline"
+              onClick={() => setSondas(null)}>ocultar</button>} />
+          <div className="divide-y divide-slate-50">
+            {Object.entries(sondas).map(([nombre, r]: [string, any]) => (
+              <div key={nombre} className="flex flex-wrap items-center gap-3 px-5 py-2.5 text-sm">
+                <span className={clsx('badge',
+                  r.http === 200 && (r.count ?? 0) > 0 ? 'bg-emerald-100 text-emerald-700'
+                  : r.http === 200 ? 'bg-slate-100 text-slate-600'
+                  : 'bg-red-100 text-red-700')}>
+                  {r.http ?? 'error'}
+                </span>
+                <span className="flex-1 font-medium text-slate-800">{nombre.replace(/_/g, ' ')}</span>
+                <span className="text-xs text-slate-500 tabular-nums">
+                  {r.count != null ? `${r.count} registro(s)` : (r.nota ?? r.error ?? '—')}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+            Un recurso en 200 con 0 registros significa que la cuenta existe y responde, pero la
+            empresa no usa ese módulo en Bsale.
+          </p>
+        </Card>
+      )}
 
       <Card>
         <CardHeader title="Últimas sincronizaciones" />
