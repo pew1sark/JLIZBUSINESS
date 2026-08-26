@@ -865,6 +865,296 @@ function Dato({ label, valor, tono }: { label: string; valor: string; tono?: 'bu
   )
 }
 
+// ---------------------------------------------------------------- selector de facturas
+// El corazón del cobro: elegir qué documentos cubre el dinero que entró.
+// Ordena por fecha de emisión (la más antigua primero, que es el orden en
+// que se cobra) y deja filtrar, porque un cliente con 55 facturas abiertas
+// no se maneja con una lista plana.
+
+type Orden = 'emision' | 'vencimiento' | 'monto'
+type Filtro = 'todas' | 'vencidas' | 'graves' | 'por_vencer' | 'abonadas'
+
+const FILTRO_LABEL: Record<Filtro, string> = {
+  todas: 'Todas',
+  vencidas: 'Vencidas',
+  graves: '+30 días',
+  por_vencer: 'Por vencer',
+  abonadas: 'Con abono',
+}
+
+/** Días que faltan para el vencimiento, o cuántos lleva vencida. */
+function diasHasta(fecha: string | null): number | null {
+  if (!fecha) return null
+  const [a, m, d] = fecha.split('-').map(Number)
+  const vence = new Date(a, m - 1, d).getTime()
+  const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
+  return Math.round((vence - hoy.getTime()) / 86_400_000)
+}
+
+function Vencimiento({ doc }: { doc: CuentaPorCobrar }) {
+  const dias = diasHasta(doc.due_date)
+  if (dias === null) return <span className="text-slate-400">sin plazo</span>
+  if (dias < 0) {
+    return (
+      <span className={clsx('font-medium', dias < -30 ? 'text-red-700' : 'text-red-600')}>
+        {-dias} {-dias === 1 ? 'día' : 'días'} vencida
+      </span>
+    )
+  }
+  if (dias === 0) return <span className="font-medium text-orange-600">vence hoy</span>
+  return <span className={dias <= 7 ? 'text-amber-600' : 'text-slate-500'}>en {dias} días</span>
+}
+
+function SelectorFacturas({
+  documentos, cargando, reparto, setReparto, disponible,
+}: {
+  documentos: CuentaPorCobrar[]
+  cargando: boolean
+  reparto: Record<string, string>
+  setReparto: (f: (r: Record<string, string>) => Record<string, string>) => void
+  disponible: number
+}) {
+  const [orden, setOrden] = useState<Orden>('emision')
+  const [filtro, setFiltro] = useState<Filtro>('todas')
+  const [buscar, setBuscar] = useState('')
+
+  const visibles = useMemo(() => {
+    const q = buscar.trim().toLowerCase()
+    const filtradas = documentos.filter((d) => {
+      if (q && !(d.doc_number ?? d.code).toLowerCase().includes(q)) return false
+      if (filtro === 'vencidas') return d.dias_atraso > 0
+      if (filtro === 'graves') return d.dias_atraso > 30
+      if (filtro === 'por_vencer') return d.dias_atraso === 0
+      if (filtro === 'abonadas') return Number(d.amount_paid) > 0
+      return true
+    })
+    const orden_fn: Record<Orden, (a: CuentaPorCobrar, b: CuentaPorCobrar) => number> = {
+      emision: (a, b) => a.issued_at.localeCompare(b.issued_at),
+      vencimiento: (a, b) => (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999'),
+      monto: (a, b) => Number(b.saldo) - Number(a.saldo),
+    }
+    return [...filtradas].sort(orden_fn[orden])
+  }, [documentos, buscar, filtro, orden])
+
+  const saldoVisible = visibles.reduce((a, d) => a + Number(d.saldo), 0)
+  const seleccionadas = Object.keys(reparto).filter((k) => Number(reparto[k]) > 0).length
+
+  /** Reparte lo disponible entre las facturas visibles, en el orden en que se ven. */
+  function repartir() {
+    let quedan = disponible
+    const nuevo: Record<string, string> = {}
+    for (const d of visibles) {
+      if (quedan <= 0) break
+      const aplica = Math.min(quedan, Number(d.saldo))
+      nuevo[`${d.origen}:${d.ref_id}`] = String(Math.round(aplica))
+      quedan -= aplica
+    }
+    setReparto(() => nuevo)
+  }
+
+  function marcarTodas() {
+    const nuevo: Record<string, string> = {}
+    for (const d of visibles) nuevo[`${d.origen}:${d.ref_id}`] = String(Math.round(Number(d.saldo)))
+    setReparto((r) => ({ ...r, ...nuevo }))
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200">
+      <div className="space-y-2 border-b border-slate-100 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 sm:max-w-[200px]">
+            <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400" />
+            <input className="input pl-9" placeholder="N° de factura…" value={buscar}
+              onChange={(e) => setBuscar(e.target.value)} />
+          </div>
+          <select className="input w-auto" value={orden} onChange={(e) => setOrden(e.target.value as Orden)}>
+            <option value="emision">Más antigua primero</option>
+            <option value="vencimiento">Por vencimiento</option>
+            <option value="monto">Mayor saldo primero</option>
+          </select>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1">
+          {(Object.keys(FILTRO_LABEL) as Filtro[]).map((f) => {
+            const n = documentos.filter((d) =>
+              f === 'vencidas' ? d.dias_atraso > 0
+              : f === 'graves' ? d.dias_atraso > 30
+              : f === 'por_vencer' ? d.dias_atraso === 0
+              : f === 'abonadas' ? Number(d.amount_paid) > 0
+              : true).length
+            if (n === 0 && f !== 'todas') return null
+            return (
+              <button key={f} type="button" onClick={() => setFiltro(f)}
+                className={clsx('rounded-full px-3 py-1 text-xs font-medium',
+                  filtro === f ? 'bg-navy-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>
+                {FILTRO_LABEL[f]} <span className="opacity-60">{n}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <span className="text-slate-500">
+            {visibles.length} documento(s) · {money(saldoVisible)}
+          </span>
+          <button type="button" className="text-sea-600 hover:underline"
+            onClick={repartir} disabled={disponible <= 0}>
+            Repartir {money(disponible)} en este orden
+          </button>
+          <button type="button" className="text-sea-600 hover:underline" onClick={marcarTodas}>
+            Marcar todas
+          </button>
+          {seleccionadas > 0 && (
+            <button type="button" className="text-slate-500 hover:underline"
+              onClick={() => setReparto(() => ({}))}>
+              Limpiar ({seleccionadas})
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="max-h-[22rem] overflow-y-auto">
+        {cargando && <Skeleton className="m-4 h-24" />}
+        {!cargando && visibles.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-slate-400">
+            {documentos.length === 0
+              ? 'Este cliente no tiene documentos pendientes'
+              : 'Ningún documento calza con el filtro'}
+          </p>
+        )}
+
+        {visibles.map((d) => {
+          const key = `${d.origen}:${d.ref_id}`
+          const marcada = !!reparto[key]
+          const parcial = Number(d.amount_paid) > 0
+          return (
+            <label key={key}
+              className={clsx('flex cursor-pointer items-center gap-3 border-b border-slate-50 px-4 py-2.5',
+                marcada ? 'bg-sea-50/60' : 'hover:bg-slate-50')}>
+              <input type="checkbox" className="h-4 w-4 shrink-0" checked={marcada}
+                onChange={(e) => setReparto((r) => {
+                  const n = { ...r }
+                  if (e.target.checked) n[key] = String(Math.round(Number(d.saldo)))
+                  else delete n[key]
+                  return n
+                })} />
+
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-800">
+                  {d.doc_number ?? d.code}
+                  {parcial && (
+                    <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                      abonada
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-slate-400">
+                  Emitida {dateShort(d.issued_at)} · vence {dateShort(d.due_date)} · <Vencimiento doc={d} />
+                </p>
+              </div>
+
+              <div className="hidden text-right sm:block">
+                <p className="text-sm tabular-nums text-slate-700">{money(d.saldo)}</p>
+                {parcial && (
+                  <p className="text-[11px] text-slate-400">de {money(d.total)}</p>
+                )}
+              </div>
+
+              <input type="number" min={0} max={Number(d.saldo)} placeholder="0"
+                className="input w-28 shrink-0 text-right text-sm"
+                onClick={(e) => e.preventDefault()}
+                value={reparto[key] ?? ''}
+                onChange={(e) => setReparto((r) => ({ ...r, [key]: e.target.value }))} />
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- panel del cliente
+/** Cómo está la cuenta del cliente, antes de decidir qué se cobra. */
+function PanelCliente({ c }: { c: EstadoCuentaCliente }) {
+  const tramos = [
+    { label: 'Por vencer', valor: Number(c.por_vencer), clase: 'bg-emerald-500' },
+    { label: '1-15 días', valor: Number(c.atraso_1_15), clase: 'bg-amber-400' },
+    { label: '16-30 días', valor: Number(c.atraso_16_30), clase: 'bg-orange-500' },
+    { label: '31-60 días', valor: Number(c.atraso_31_60), clase: 'bg-red-500' },
+    { label: '+60 días', valor: Number(c.atraso_60_mas), clase: 'bg-red-800' },
+  ].filter((t) => t.valor > 0)
+
+  const total = Number(c.deuda_total) || 1
+  const aFavor = Number(c.nota_credito) + Number(c.pago_a_cuenta)
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Dato label="Deuda total" valor={money(c.deuda_total)} />
+        <Dato label="Vencido" valor={money(c.vencido)} tono={Number(c.vencido) > 0 ? 'malo' : undefined} />
+        <Dato label="A favor" valor={aFavor > 0 ? money(aFavor) : '—'} tono={aFavor > 0 ? 'bueno' : undefined} />
+        <Dato label="Documentos" valor={String(c.documentos)} />
+      </div>
+
+      {tramos.length > 0 && (
+        <div className="mt-3">
+          <div className="flex h-2 overflow-hidden rounded-full bg-slate-200">
+            {tramos.map((t) => (
+              <div key={t.label} className={t.clase} style={{ width: `${(t.valor / total) * 100}%` }} />
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            {tramos.map((t) => (
+              <span key={t.label} className="flex items-center gap-1.5 text-slate-600">
+                <span className={clsx('h-2 w-2 rounded-full', t.clase)} />
+                {t.label} <span className="tabular-nums font-medium">{money(t.valor)}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-200 pt-2 text-xs text-slate-500">
+        <span>Plazo {c.payment_terms_days} días</span>
+        {c.peor_atraso > 0 && (
+          <span className="text-red-600">Peor atraso {c.peor_atraso} días</span>
+        )}
+        {c.vence_primero && <span>Vence primero {dateShort(c.vence_primero)}</span>}
+        <span>Último pago {c.ultimo_pago ? dateShort(c.ultimo_pago) : 'sin registros'}</span>
+        {c.sobre_limite && (
+          <span className="font-medium text-red-600">Sobre el límite de crédito</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- barra de imputación
+function BarraImputacion({ monto, imputado }: { monto: number; imputado: number }) {
+  const resto = monto - imputado
+  const pctImputado = monto > 0 ? Math.min((imputado / monto) * 100, 100) : 0
+  return (
+    <div className="rounded-lg bg-navy-900 px-4 py-3 text-white">
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-navy-200">Pago {money(monto)}</span>
+        <span className="tabular-nums">
+          Imputado {money(imputado)}
+          {Math.abs(resto) > 0.5 && (
+            <span className={resto > 0 ? 'text-amber-300' : 'text-red-300'}>
+              {' · '}{resto > 0 ? `${money(resto)} a cuenta` : `${money(-resto)} de más`}
+            </span>
+          )}
+        </span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-navy-700">
+        <div className={clsx('h-full', resto < -0.5 ? 'bg-red-400' : 'bg-sea-400')}
+          style={{ width: `${pctImputado}%` }} />
+      </div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------- registrar cobro
 function ModalCobrar({
   inicial, clientes, onClose, onHecho,
@@ -879,9 +1169,11 @@ function ModalCobrar({
   const [metodo, setMetodo] = useState<PaymentMethod>('transferencia')
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
   const [referencia, setReferencia] = useState('')
-  const [modo, setModo] = useState<'auto' | 'manual'>('auto')
+  const [notas, setNotas] = useState('')
   const [reparto, setReparto] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
+
+  const cliente = clientes.find((c) => c.customer_id === customerId)
 
   const docs = useQuery({
     queryKey: ['cob-docs-cliente', customerId],
@@ -889,7 +1181,7 @@ function ModalCobrar({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('v_cuentas_por_cobrar').select('*').eq('customer_id', customerId)
-        .order('due_date', { ascending: true, nullsFirst: false })
+        .order('issued_at', { ascending: true })
       if (error) throw error
       return data as CuentaPorCobrar[]
     },
@@ -898,20 +1190,6 @@ function ModalCobrar({
   const montoNum = Number(monto) || 0
   const imputado = Object.values(reparto).reduce((a, v) => a + (Number(v) || 0), 0)
   const resto = montoNum - imputado
-
-  // Reparte el monto entre las facturas más antiguas, que es la regla por defecto.
-  function repartirAutomatico() {
-    let quedan = montoNum
-    const nuevo: Record<string, string> = {}
-    for (const d of docs.data ?? []) {
-      if (quedan <= 0) break
-      const aplica = Math.min(quedan, Number(d.saldo))
-      nuevo[`${d.origen}:${d.ref_id}`] = String(Math.round(aplica))
-      quedan -= aplica
-    }
-    setReparto(nuevo)
-    setModo('manual')
-  }
 
   const guardar = useMutation({
     mutationFn: async () => {
@@ -928,9 +1206,9 @@ function ModalCobrar({
         _method: metodo,
         _paid_at: new Date(`${fecha}T12:00:00`).toISOString(),
         _reference: referencia.trim() || null,
-        _notes: null,
-        _allocations: modo === 'manual' ? allocations : null,
-        _auto: modo === 'auto',
+        _notes: notas.trim() || null,
+        _allocations: allocations.length ? allocations : null,
+        _auto: false,
       })
       if (error) throw error
       return data
@@ -939,7 +1217,7 @@ function ModalCobrar({
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
 
-  const listo = !!customerId && montoNum > 0 && (modo === 'auto' || imputado <= montoNum + 0.5)
+  const listo = !!customerId && montoNum > 0 && resto >= -0.5
 
   return (
     <Modal open onClose={onClose} wide title="Registrar un cobro"
@@ -956,22 +1234,29 @@ function ModalCobrar({
         {error && <ErrorState error={error} />}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block">
+          <label className="block sm:col-span-2">
             <span className="label">Cliente</span>
             <select className="input" value={customerId}
               onChange={(e) => { setCustomerId(e.target.value); setReparto({}) }}>
               <option value="">Selecciona…</option>
-              {clientes.map((c) => (
+              {clientes.filter((c) => Number(c.deuda_total) > 0).map((c) => (
                 <option key={c.customer_id} value={c.customer_id}>
-                  {c.cliente} — debe {money(c.deuda_total)}
+                  {c.cliente} — debe {money(c.deuda_total)} en {c.documentos} doc.
                 </option>
               ))}
             </select>
           </label>
+
           <label className="block">
             <span className="label">Monto recibido</span>
             <input className="input" type="number" min={0} value={monto} placeholder="0"
               onChange={(e) => setMonto(e.target.value)} />
+          </label>
+          <label className="block">
+            <span className="label">Fecha del pago</span>
+            <input className="input" type="date" value={fecha}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setFecha(e.target.value)} />
           </label>
           <label className="block">
             <span className="label">Forma de pago</span>
@@ -983,91 +1268,33 @@ function ModalCobrar({
             </select>
           </label>
           <label className="block">
-            <span className="label">Fecha del pago</span>
-            <input className="input" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="label">Referencia o número de operación</span>
+            <span className="label">N° de operación</span>
             <input className="input" value={referencia} placeholder="Opcional"
               onChange={(e) => setReferencia(e.target.value)} />
           </label>
         </div>
 
-        <div className="rounded-lg border border-slate-200">
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
-            <p className="flex-1 text-sm font-medium text-slate-700">¿Qué facturas cubre este pago?</p>
-            <div className="flex gap-1 rounded-lg bg-slate-100 p-0.5 text-xs">
-              <button onClick={() => { setModo('auto'); setReparto({}) }}
-                className={clsx('rounded px-3 py-1', modo === 'auto' ? 'bg-white shadow-sm' : 'text-slate-500')}>
-                Las más antiguas
-              </button>
-              <button onClick={() => setModo('manual')}
-                className={clsx('rounded px-3 py-1', modo === 'manual' ? 'bg-white shadow-sm' : 'text-slate-500')}>
-                Elegir yo
-              </button>
-            </div>
-          </div>
+        {cliente && <PanelCliente c={cliente} />}
 
-          {modo === 'auto' ? (
-            <p className="px-4 py-4 text-sm text-slate-500">
-              El pago se va a aplicar a las facturas con vencimiento más antiguo hasta agotar el monto.
-              Si sobra, queda como saldo a favor del cliente y lo puedes imputar después.
-            </p>
-          ) : (
-            <>
-              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2 text-xs">
-                <button className="text-sea-600 hover:underline" onClick={repartirAutomatico}
-                  disabled={!montoNum}>
-                  Repartir automáticamente desde la más antigua
-                </button>
-                <span className={clsx('tabular-nums',
-                  resto < -0.5 ? 'font-medium text-red-600' : 'text-slate-500')}>
-                  Imputado {money(imputado)} · resto {money(resto)}
-                </span>
-              </div>
-              <div className="max-h-64 overflow-y-auto">
-                {docs.isLoading && <Skeleton className="m-4 h-24" />}
-                {docs.data?.length === 0 && (
-                  <p className="px-4 py-6 text-center text-sm text-slate-400">
-                    Este cliente no tiene documentos pendientes
-                  </p>
-                )}
-                {(docs.data ?? []).map((d) => {
-                  const key = `${d.origen}:${d.ref_id}`
-                  return (
-                    <div key={key} className="flex items-center gap-3 border-b border-slate-50 px-4 py-2 text-sm">
-                      <input type="checkbox" className="h-4 w-4"
-                        checked={!!reparto[key]}
-                        onChange={(e) => setReparto((r) => {
-                          const n = { ...r }
-                          if (e.target.checked) n[key] = String(Math.round(Number(d.saldo)))
-                          else delete n[key]
-                          return n
-                        })} />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-slate-800">{d.doc_number ?? d.code}</p>
-                        <p className="text-xs text-slate-400">
-                          vence {dateShort(d.due_date)}
-                          {d.dias_atraso > 0 && ` · ${d.dias_atraso} días de atraso`}
-                          {' · saldo '}{money(d.saldo)}
-                        </p>
-                      </div>
-                      <input type="number" min={0} max={Number(d.saldo)}
-                        className="input w-32 text-right" placeholder="0"
-                        value={reparto[key] ?? ''}
-                        onChange={(e) => setReparto((r) => ({ ...r, [key]: e.target.value }))} />
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          )}
-        </div>
+        {customerId && (
+          <>
+            <BarraImputacion monto={montoNum} imputado={imputado} />
+            <SelectorFacturas documentos={docs.data ?? []} cargando={docs.isLoading}
+              reparto={reparto} setReparto={setReparto}
+              disponible={montoNum} />
+          </>
+        )}
 
-        {resto > 0.5 && modo === 'manual' && (
+        <label className="block">
+          <span className="label">Nota interna</span>
+          <input className="input" value={notas} placeholder="Opcional"
+            onChange={(e) => setNotas(e.target.value)} />
+        </label>
+
+        {resto > 0.5 && (
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
             Quedan {money(resto)} sin asignar. Se guardan como saldo a favor del cliente
-            y quedan listados en la pestaña de Pagos para imputar cuando se sepa a qué factura van.
+            y quedan en la pestaña de Pagos para imputar cuando se sepa a qué factura van.
           </p>
         )}
         {resto < -0.5 && (
@@ -1091,12 +1318,22 @@ function ModalImputar({
   const [reparto, setReparto] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
 
+  const cliente = useQuery({
+    queryKey: ['estado-cuenta', pago.customer_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_estado_cuenta_cliente').select('*').eq('customer_id', pago.customer_id).single()
+      if (error) throw error
+      return data as EstadoCuentaCliente
+    },
+  })
+
   const docs = useQuery({
     queryKey: ['cob-docs-cliente', pago.customer_id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('v_cuentas_por_cobrar').select('*').eq('customer_id', pago.customer_id)
-        .order('due_date', { ascending: true, nullsFirst: false })
+        .order('issued_at', { ascending: true })
       if (error) throw error
       return data as CuentaPorCobrar[]
     },
@@ -1105,16 +1342,7 @@ function ModalImputar({
   const imputado = Object.values(reparto).reduce((a, v) => a + (Number(v) || 0), 0)
   const resto = Number(pago.amount) - imputado
 
-  const auto = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase.rpc('auto_allocate_payment', { _payment_id: pago.id })
-      if (error) throw error
-    },
-    onSuccess: onHecho,
-    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
-  })
-
-  const manual = useMutation({
+  const guardar = useMutation({
     mutationFn: async () => {
       const allocations: Imputacion[] = Object.entries(reparto)
         .filter(([, v]) => Number(v) > 0)
@@ -1136,63 +1364,27 @@ function ModalImputar({
       footer={
         <>
           <button className="btn-secondary" onClick={onClose}>Cancelar</button>
-          <button className="btn-secondary" disabled={auto.isPending} onClick={() => auto.mutate()}>
-            Aplicar a las más antiguas
-          </button>
-          <button className="btn-primary" disabled={imputado <= 0 || resto < -0.5 || manual.isPending}
-            onClick={() => manual.mutate()}>
+          <button className="btn-primary" disabled={imputado <= 0 || resto < -0.5 || guardar.isPending}
+            onClick={() => guardar.mutate()}>
             Guardar imputación
           </button>
         </>
       }>
-      <div className="space-y-3">
+      <div className="space-y-4">
         {error && <ErrorState error={error} />}
 
-        <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
-          <div>
-            <p className="text-sm text-slate-500">{pago.code} · {dateShort(pago.paid_at)}</p>
-            <p className="font-semibold">{money(pago.amount)}</p>
-          </div>
-          <div className="text-right text-sm">
-            <p className="text-slate-500">Sin imputar</p>
-            <p className="font-semibold tabular-nums text-amber-700">{money(resto)}</p>
-          </div>
-        </div>
+        <p className="text-sm text-slate-500">
+          {pago.code} · {dateShort(pago.paid_at)} · {PAYMENT_METHOD_LABEL[pago.method]}
+          {pago.reference && ` · ref ${pago.reference}`}
+        </p>
 
-        <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-200">
-          {docs.isLoading && <Skeleton className="m-4 h-24" />}
-          {docs.data?.length === 0 && (
-            <p className="px-4 py-6 text-center text-sm text-slate-400">
-              Este cliente no tiene documentos pendientes. El pago queda como saldo a favor.
-            </p>
-          )}
-          {(docs.data ?? []).map((d) => {
-            const key = `${d.origen}:${d.ref_id}`
-            return (
-              <div key={key} className="flex items-center gap-3 border-b border-slate-50 px-4 py-2 text-sm">
-                <input type="checkbox" className="h-4 w-4" checked={!!reparto[key]}
-                  onChange={(e) => setReparto((r) => {
-                    const n = { ...r }
-                    if (e.target.checked) {
-                      n[key] = String(Math.round(Math.min(Number(d.saldo), Math.max(resto, 0) + Number(r[key] ?? 0))))
-                    } else delete n[key]
-                    return n
-                  })} />
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-slate-800">{d.doc_number ?? d.code}</p>
-                  <p className="text-xs text-slate-400">
-                    vence {dateShort(d.due_date)}
-                    {d.dias_atraso > 0 && ` · ${d.dias_atraso} días de atraso`}
-                    {' · saldo '}{money(d.saldo)}
-                  </p>
-                </div>
-                <input type="number" min={0} max={Number(d.saldo)} className="input w-32 text-right"
-                  placeholder="0" value={reparto[key] ?? ''}
-                  onChange={(e) => setReparto((r) => ({ ...r, [key]: e.target.value }))} />
-              </div>
-            )
-          })}
-        </div>
+        {cliente.data && <PanelCliente c={cliente.data} />}
+
+        <BarraImputacion monto={Number(pago.amount)} imputado={imputado} />
+
+        <SelectorFacturas documentos={docs.data ?? []} cargando={docs.isLoading}
+          reparto={reparto} setReparto={setReparto}
+          disponible={Number(pago.amount)} />
 
         {resto < -0.5 && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
