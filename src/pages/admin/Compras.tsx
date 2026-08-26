@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, Check, PackageCheck, Pencil, Plus, SlidersHorizontal, Trash2, Truck } from 'lucide-react'
+import { Ban, Check, PackageCheck, Pencil, Plus, SlidersHorizontal, Trash2, Truck, Search, Download } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useProducts, useSuppliers } from '../../lib/queries'
 import type { PaymentMethod, Purchase } from '../../lib/types'
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE, PURCHASE_STATUS_LABEL } from '../../lib/constants'
 import { dateShort, kg, money } from '../../lib/format'
 import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { FiltroPeriodo, Paginador } from '../../components/Filtros'
+import { rangoDe, type Periodo } from '../../lib/periodo'
+import { descargarCsv } from '../../lib/csv'
 
 interface Linea {
   product_id: string
@@ -34,19 +37,63 @@ export function Compras() {
   const [corregir, setCorregir] = useState<Purchase | null>(null)
   const [anular, setAnular] = useState<Purchase | null>(null)
   const [detalleId, setDetalleId] = useState<string | null>(null)
+  const [periodo, setPeriodo] = useState<Periodo>(() => rangoDe('mes'))
+  const [buscar, setBuscar] = useState('')
+  const [estado, setEstado] = useState<'todos' | 'borrador' | 'recibida' | 'anulada'>('todos')
+  const [pago, setPago] = useState<'todos' | 'pendiente' | 'parcial' | 'vencido' | 'pagado'>('todos')
+  const [pagina, setPagina] = useState(0)
+  const [porPagina, setPorPagina] = useState(50)
 
+  // Antes traía las últimas 150 sin más: con el histórico cargado desde
+  // Bsale eso escondía compras. Ahora se pide por rango de fechas.
   const compras = useQuery({
-    queryKey: ['purchases'],
+    queryKey: ['purchases', periodo.desde, periodo.hasta],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('purchases')
         .select('*, suppliers(id, name)')
         .order('purchase_date', { ascending: false })
-        .limit(150)
+        .limit(2000)
+      if (periodo.desde) q = q.gte('purchase_date', periodo.desde)
+      if (periodo.hasta) q = q.lte('purchase_date', periodo.hasta)
+      const { data, error } = await q
       if (error) throw error
       return data as Purchase[]
     },
   })
+
+  const filtradas = useMemo(() => {
+    const t = buscar.trim().toLowerCase()
+    return (compras.data ?? []).filter((c) => {
+      if (estado !== 'todos' && c.status !== estado) return false
+      if (pago !== 'todos' && c.payment_status !== pago) return false
+      if (t && !(c.suppliers?.name ?? '').toLowerCase().includes(t)
+            && !(c.invoice_number ?? '').toLowerCase().includes(t)
+            && !c.code.toLowerCase().includes(t)
+            && !(c.origin ?? '').toLowerCase().includes(t)) return false
+      return true
+    })
+  }, [compras.data, buscar, estado, pago])
+
+  useEffect(() => { setPagina(0) }, [periodo.desde, periodo.hasta, buscar, estado, pago])
+
+  const pagesData = useMemo(
+    () => filtradas.slice(pagina * porPagina, (pagina + 1) * porPagina),
+    [filtradas, pagina, porPagina],
+  )
+
+  function exportar() {
+    const filas: (string | number)[][] = [[
+      'Compra', 'Proveedor', 'Fecha', 'Factura', 'Origen', 'Neto', 'Flete', 'Otros',
+      'Total', 'Estado', 'Pago', 'Pagado', 'Saldo',
+    ]]
+    for (const c of filtradas) {
+      filas.push([c.code, c.suppliers?.name ?? '', c.purchase_date, c.invoice_number ?? '',
+        c.origin ?? '', c.subtotal, c.freight_cost, c.other_costs, c.total,
+        c.status, c.payment_status, c.amount_paid, Number(c.total) - Number(c.amount_paid)])
+    }
+    descargarCsv(filas, `compras-${periodo.desde ?? 'todo'}`)
+  }
 
   const detalle = useQuery({
     queryKey: ['purchase-items', detalleId],
@@ -77,10 +124,8 @@ export function Compras() {
     qc.invalidateQueries({ queryKey: ['dashboard-kpis'] })
   }
 
-  const mes = (compras.data ?? []).filter(
-    (c) => c.status === 'recibida' && new Date(c.purchase_date).getMonth() === new Date().getMonth(),
-  )
-  const borradores = (compras.data ?? []).filter((c) => c.status === 'borrador')
+  const recibidas = filtradas.filter((c) => c.status === 'recibida')
+  const borradores = filtradas.filter((c) => c.status === 'borrador')
 
   return (
     <>
@@ -88,28 +133,63 @@ export function Compras() {
         title="Compras"
         subtitle="Al recibir, el flete y los costos se reparten y queda el costo real por kilo"
         actions={
-          <button onClick={() => setEditor({ modo: 'nueva' })} className="btn-primary">
-            <Plus className="h-4 w-4" /> Nueva compra
-          </button>
+          <>
+            <FiltroPeriodo valor={periodo} onChange={setPeriodo} />
+            <button onClick={exportar} className="btn-secondary">
+              <Download className="h-4 w-4" /> CSV
+            </button>
+            <button onClick={() => setEditor({ modo: 'nueva' })} className="btn-primary">
+              <Plus className="h-4 w-4" /> Nueva compra
+            </button>
+          </>
         }
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Compras del mes" value={money(mes.reduce((n, c) => n + Number(c.total), 0))} hint={`${mes.length} recepciones`} />
-        <StatCard label="Flete del mes" value={money(mes.reduce((n, c) => n + Number(c.freight_cost), 0))} icon={<Truck className="h-4 w-4" />} />
+        <StatCard label="Comprado en el período" value={money(recibidas.reduce((n, c) => n + Number(c.total), 0))} hint={`${recibidas.length} compras`} />
+        <StatCard label="Flete del período" value={money(recibidas.reduce((n, c) => n + Number(c.freight_cost), 0))} icon={<Truck className="h-4 w-4" />} />
         <StatCard
           label="Por pagar"
-          value={money((compras.data ?? []).filter((c) => c.payment_status !== 'pagado' && c.status === 'recibida').reduce((n, c) => n + (Number(c.total) - Number(c.amount_paid)), 0))}
+          value={money(filtradas.filter((c) => c.payment_status !== 'pagado' && c.status === 'recibida').reduce((n, c) => n + (Number(c.total) - Number(c.amount_paid)), 0))}
           tone="warning"
         />
         <StatCard label="Borradores" value={String(borradores.length)} hint="pendientes de recibir" />
       </div>
 
+      <div className="mt-3 mb-2 flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 sm:max-w-xs">
+          <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400" />
+          <input className="input pl-9" placeholder="Buscar proveedor, factura, código u origen…"
+            value={buscar} onChange={(e) => setBuscar(e.target.value)} />
+        </div>
+        <select className="input w-auto" value={estado}
+          onChange={(e) => setEstado(e.target.value as typeof estado)}>
+          <option value="todos">Todo estado</option>
+          <option value="borrador">Borrador</option>
+          <option value="recibida">Recibida</option>
+          <option value="anulada">Anulada</option>
+        </select>
+        <select className="input w-auto" value={pago}
+          onChange={(e) => setPago(e.target.value as typeof pago)}>
+          <option value="todos">Todo pago</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="parcial">Parcial</option>
+          <option value="vencido">Vencido</option>
+          <option value="pagado">Pagado</option>
+        </select>
+        <span className="text-xs text-slate-400">{filtradas.length} de {compras.data?.length ?? 0}</span>
+      </div>
+
       {compras.isError && <ErrorState error={compras.error} />}
       {compras.isLoading && <Skeleton className="mt-4 h-64" />}
-      {compras.data?.length === 0 && <Card className="mt-4"><EmptyState title="Sin compras registradas" /></Card>}
+      {!compras.isLoading && filtradas.length === 0 && (
+        <Card className="mt-4">
+          <EmptyState title="Sin compras en este filtro"
+            hint="Prueba ampliando el período a «todo» o limpiando la búsqueda." />
+        </Card>
+      )}
 
-      {!!compras.data?.length && (
+      {!!filtradas.length && (
         <div className="mt-4">
           <TableWrap>
             <thead className="bg-slate-50">
@@ -125,7 +205,7 @@ export function Compras() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {compras.data.map((c) => (
+              {pagesData.map((c) => (
                 <tr key={c.id} className={`hover:bg-slate-50 ${c.status === 'anulada' ? 'opacity-50' : ''}`}>
                   <td className="td">
                     <button onClick={() => setDetalleId(c.id)} className="font-mono text-xs font-medium text-navy-700 hover:underline">
@@ -191,6 +271,10 @@ export function Compras() {
               ))}
             </tbody>
           </TableWrap>
+          <div className="card mt-3">
+            <Paginador total={filtradas.length} pagina={pagina} porPagina={porPagina}
+              onPagina={setPagina} onPorPagina={setPorPagina} />
+          </div>
           {recibir.isError && <div className="mt-3"><ErrorState error={recibir.error} /></div>}
         </div>
       )}

@@ -185,7 +185,11 @@ export interface Purchase {
   payment_method: PaymentMethod
   payment_status: PaymentStatus
   amount_paid: number
+  due_date: string | null
+  invoice_number: string | null
+  document_url: string | null
   origin: string | null
+  bsale_document_id: number | null
   suppliers?: Pick<Supplier, 'id' | 'name'>
 }
 
