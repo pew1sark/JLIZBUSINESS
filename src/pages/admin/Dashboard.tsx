@@ -5,16 +5,14 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import {
-  AlertTriangle, Boxes, ClipboardList, MapPin, Package, TrendingUp, Truck, Wallet,
+  AlertTriangle, Boxes, ClipboardList, MapPin, Package, Receipt, TrendingUp, Wallet,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { Mapa, type PuntoMapa } from '../../components/Mapa'
-import { CUSTOMER_TYPE_LABEL } from '../../lib/constants'
-import type { CustomerType } from '../../lib/types'
-import type { DashboardKpis, OrderStatus, ProductStock } from '../../lib/types'
+import { CUSTOMER_TYPE_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE } from '../../lib/constants'
+import type { CustomerType, DashboardKpis, PaymentStatus, ProductStock } from '../../lib/types'
 import { dateShort, kg, money, moneyShort, relative } from '../../lib/format'
-import { ORDER_STATUS_LABEL, ORDER_STATUS_STYLE } from '../../lib/constants'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton, StatCard } from '../../components/ui'
 
 interface SeriePunto { dia: string; ventas: number; compras: number; margen: number }
@@ -37,11 +35,62 @@ interface ClienteMapa {
 
 interface ActividadItem {
   id: string
-  code: string
-  status: OrderStatus
+  doc_type: string
+  doc_number: string
   total: number
-  order_date: string
+  issued_at: string
+  due_date: string | null
+  amount_paid: number
+  payment_status: PaymentStatus
   customers: { name: string } | null
+}
+
+/** El estado del negocio en ocho números. */
+export function ResumenKpis({ k }: { k: DashboardKpis }) {
+  // Sin costo cargado no hay margen que mostrar: se marca como no calculable.
+  const sinCosto = Number(k.cobertura_costo_pct) === 0
+  const margenPct = Number(k.venta_costeada) > 0
+    ? Math.round((k.margen_mes / Number(k.venta_costeada)) * 1000) / 10
+    : 0
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-4">
+        <StatCard label="Ventas hoy" value={money(k.ventas_hoy)}
+          hint={`Semana ${moneyShort(k.ventas_semana)}`} icon={<TrendingUp className="h-4 w-4" />} />
+        <StatCard label="Facturado del mes" value={moneyShort(k.ventas_mes)}
+          hint={`${k.documentos_mes} documento${k.documentos_mes === 1 ? '' : 's'}`}
+          icon={<Receipt className="h-4 w-4" />} />
+        <StatCard label="Por cobrar" value={moneyShort(k.cuentas_por_cobrar)}
+          hint={`${k.documentos_por_cobrar} doc. · ${k.clientes_con_deuda} clientes`}
+          icon={<Wallet className="h-4 w-4" />} />
+        <StatCard label="Vencido" value={moneyShort(k.cuentas_vencidas)}
+          hint={k.vencido_grave > 0 ? `${moneyShort(k.vencido_grave)} con +30 días` : 'nada sobre 30 días'}
+          tone={k.cuentas_vencidas > 0 ? 'danger' : 'positive'}
+          icon={<AlertTriangle className="h-4 w-4" />} />
+
+        <StatCard label="Stock disponible" value={kg(k.stock_total)}
+          hint={`Valorizado ${moneyShort(k.stock_valor)}`} icon={<Boxes className="h-4 w-4" />} />
+        <StatCard label="Compras del mes" value={moneyShort(k.compras_mes)}
+          hint="recibidas" icon={<Package className="h-4 w-4" />} />
+        <StatCard label="Margen del mes"
+          value={sinCosto ? '—' : `${margenPct}%`}
+          hint={sinCosto ? 'falta cargar el costo' : money(k.margen_mes)}
+          tone={sinCosto ? 'default' : margenPct >= 20 ? 'positive' : 'warning'}
+          icon={<TrendingUp className="h-4 w-4" />} />
+        <StatCard label="Pedidos en curso" value={String(k.pedidos_pendientes)}
+          hint={`${k.pedidos_en_reparto} en reparto · ${k.pedidos_entregados_hoy} entregados hoy`}
+          icon={<ClipboardList className="h-4 w-4" />} />
+      </div>
+
+      {sinCosto && k.ventas_mes > 0 && (
+        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          El margen del mes no se puede calcular: las ventas facturadas todavía no tienen el
+          costo cargado. Entra al registrar las compras del período en Compras.
+        </p>
+      )}
+    </>
+  )
 }
 
 export function Dashboard() {
@@ -88,9 +137,10 @@ export function Dashboard() {
     refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('orders')
-        .select('id, code, status, total, order_date, customers(name)')
-        .order('order_date', { ascending: false })
+        .from('invoices')
+        .select('id, doc_type, doc_number, total, issued_at, due_date, amount_paid, payment_status, customers(name)')
+        .order('issued_at', { ascending: false })
+        .order('doc_number', { ascending: false })
         .limit(8)
       if (error) throw error
       return data as unknown as ActividadItem[]
@@ -123,20 +173,22 @@ export function Dashboard() {
   const topProductos = useQuery({
     queryKey: ['top-productos'],
     queryFn: async () => {
+      // Se leen las líneas de los documentos emitidos en los últimos 60 días.
+      const desde = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10)
       const { data, error } = await supabase
-        .from('order_items')
-        .select('quantity_ordered, quantity_prepared, line_total, products(name)')
-        .limit(500)
+        .from('invoice_items')
+        .select('description, quantity, net_total, invoices!inner(issued_at)')
+        .gte('invoices.issued_at', desde)
+        .limit(3000)
       if (error) throw error
       const acc = new Map<string, { name: string; kilos: number; monto: number }>()
       for (const it of data as unknown as {
-        quantity_ordered: number; quantity_prepared: number | null; line_total: number
-        products: { name: string } | null
+        description: string; quantity: number; net_total: number
       }[]) {
-        const name = it.products?.name ?? 'Sin producto'
+        const name = it.description || 'Sin producto'
         const prev = acc.get(name) ?? { name, kilos: 0, monto: 0 }
-        prev.kilos += Number(it.quantity_prepared ?? it.quantity_ordered)
-        prev.monto += Number(it.line_total)
+        prev.kilos += Number(it.quantity)
+        prev.monto += Number(it.net_total)
         acc.set(name, prev)
       }
       return [...acc.values()].sort((a, b) => b.monto - a.monto).slice(0, 7)
@@ -190,7 +242,6 @@ export function Dashboard() {
 
   const k = kpis.data
   const bajos = (stock.data ?? []).filter((p) => p.min_stock > 0 && p.available < p.min_stock)
-  const margenPct = k && k.ventas_mes > 0 ? Math.round((k.margen_mes / k.ventas_mes) * 1000) / 10 : 0
 
   return (
     <>
@@ -203,20 +254,11 @@ export function Dashboard() {
 
       {kpis.isError && <ErrorState error={kpis.error} />}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {kpis.isLoading
-          ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-24" />)
-          : k && (
-              <>
-                <StatCard label="Ventas hoy" value={money(k.ventas_hoy)} hint={`Semana ${moneyShort(k.ventas_semana)}`} icon={<TrendingUp className="h-4 w-4" />} />
-                <StatCard label="Pedidos activos" value={String(k.pedidos_pendientes)} hint={`${k.pedidos_en_reparto} en reparto`} icon={<ClipboardList className="h-4 w-4" />} />
-                <StatCard label="Entregas hoy" value={String(k.pedidos_entregados_hoy)} hint="completadas" icon={<Truck className="h-4 w-4" />} />
-                <StatCard label="Stock disponible" value={kg(k.stock_total)} hint={`Valorizado ${moneyShort(k.stock_valor)}`} icon={<Boxes className="h-4 w-4" />} />
-                <StatCard label="Por cobrar" value={moneyShort(k.cuentas_por_cobrar)} hint={`${moneyShort(k.cuentas_vencidas)} vencido`} tone={k.cuentas_vencidas > 0 ? 'danger' : 'default'} icon={<Wallet className="h-4 w-4" />} />
-                <StatCard label="Margen del mes" value={`${margenPct}%`} hint={money(k.margen_mes)} tone={margenPct >= 20 ? 'positive' : 'warning'} icon={<Package className="h-4 w-4" />} />
-              </>
-            )}
-      </div>
+      {kpis.isLoading
+        ? <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
+          </div>
+        : k && <ResumenKpis k={k} />}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2">
@@ -247,21 +289,29 @@ export function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader title="Qué está pasando ahora" action={<Link to="/pedidos" className="text-xs font-medium text-navy-600 hover:underline">Ver pedidos</Link>} />
+          <CardHeader title="Últimos documentos emitidos" action={<Link to="/ventas" className="text-xs font-medium text-navy-600 hover:underline">Ver ventas</Link>} />
           <div className="divide-y divide-slate-50">
             {actividad.isLoading && <Skeleton className="m-4 h-40" />}
+            {actividad.data?.length === 0 && (
+              <p className="px-4 py-8 text-center text-sm text-slate-400">
+                Todavía no hay documentos emitidos
+              </p>
+            )}
             {actividad.data?.map((a) => (
-              <Link key={a.id} to={`/pedidos/${a.id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50">
+              <Link key={a.id} to="/ventas" className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-slate-800">{a.customers?.name ?? 'Cliente'}</p>
                   <p className="text-xs text-slate-400">
-                    {a.code} · {relative(a.order_date)}
+                    {a.doc_type === 'nota_credito' ? 'NC' : 'Factura'} {a.doc_number} · {relative(a.issued_at)}
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-medium tabular-nums text-slate-700">{moneyShort(a.total)}</p>
-                  <span className={`badge ${ORDER_STATUS_STYLE[a.status]} mt-0.5`}>
-                    {ORDER_STATUS_LABEL[a.status]}
+                  <p className={`text-sm font-medium tabular-nums ${
+                    a.doc_type === 'nota_credito' ? 'text-emerald-600' : 'text-slate-700'}`}>
+                    {moneyShort(a.total)}
+                  </p>
+                  <span className={`badge ${PAYMENT_STATUS_STYLE[a.payment_status]} mt-0.5`}>
+                    {PAYMENT_STATUS_LABEL[a.payment_status]}
                   </span>
                 </div>
               </Link>
@@ -348,7 +398,7 @@ export function Dashboard() {
 
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2">
-          <CardHeader title="Productos con mayor facturación" />
+          <CardHeader title="Productos con mayor facturación" action={<span className="text-xs text-slate-400">últimos 60 días</span>} />
           <div className="h-72 p-4">
             {topProductos.isLoading ? (
               <Skeleton className="h-full w-full" />

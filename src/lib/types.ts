@@ -247,8 +247,11 @@ export interface DashboardKpis {
   ventas_hoy: number
   ventas_semana: number
   ventas_mes: number
+  documentos_mes: number
   compras_mes: number
   margen_mes: number
+  venta_costeada: number
+  cobertura_costo_pct: number
   pedidos_pendientes: number
   pedidos_en_reparto: number
   pedidos_entregados_hoy: number
@@ -256,8 +259,11 @@ export interface DashboardKpis {
   stock_valor: number
   productos_stock_bajo: number
   clientes_activos: number
+  clientes_con_deuda: number
+  documentos_por_cobrar: number
   cuentas_por_cobrar: number
   cuentas_vencidas: number
+  vencido_grave: number
 }
 
 // ---------- COBRANZA ----------

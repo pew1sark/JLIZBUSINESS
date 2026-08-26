@@ -1,0 +1,18 @@
+-- ============================================================
+-- Dashboard y saldos de cliente con los documentos importados
+--
+-- Después de importar las 745 facturas, casi todo el dashboard
+-- seguía leyendo solo `orders`:
+--   · v_customer_balance dejaba a los 39 clientes con saldo cero,
+--     y esa vista alimenta el mapa del dashboard Y la pantalla de
+--     Clientes (vía v_clientes_mapa).
+--   · sales_series devolvía un gráfico plano de 30 días.
+--   · dashboard_kpis no traía el riesgo real (deuda sobre 30 días)
+--     ni cuántos documentos hay detrás de cada cifra.
+--
+-- Reglas, iguales que en el resto: la venta es NETA, un pedido con
+-- factura asociada no se cuenta dos veces, y el margen solo se
+-- calcula sobre la venta que tiene costo cargado.
+--
+-- Aplicado como `saldo_cliente_y_serie_con_facturas` y
+-- `dashboard_riesgo_y_cobertura`. Detalle en supabase/README.md.
