@@ -119,6 +119,19 @@ export function BsaleConexion() {
     onError: (e) => { setAviso(null); setError(e instanceof Error ? e.message : String(e)) },
   })
 
+  const traerXml = useMutation({
+    mutationFn: () => invocar<{ procesados: number; lineas: number; fallidos: number; quedan: number }>(
+      'bsale-xml', { max: 60 }),
+    onSuccess: (r) => {
+      setError(null)
+      setAviso(`Detalle extraído: ${r.lineas} línea(s) de ${r.procesados} documento(s).` +
+        (r.fallidos ? ` ${r.fallidos} fallaron.` : '') +
+        (r.quedan ? ` Quedan ${r.quedan}: vuelve a pulsar.` : ' No queda ninguno pendiente.'))
+      refrescar()
+    },
+    onError: (e) => { setAviso(null); setError(e instanceof Error ? e.message : String(e)) },
+  })
+
   const diagnosticar = useMutation({
     mutationFn: () => invocar<{ sondas: Record<string, any> }>('bsale-probe', {}),
     onSuccess: (r) => { setError(null); setAviso(null); setSondas(r.sondas) },
@@ -192,6 +205,13 @@ export function BsaleConexion() {
                   onClick={() => sincronizar.mutate({ resource: 'detalles', max_detalles: 120 })}>
                   Traer costos por producto
                 </button>
+                <button className="btn-primary px-3 py-1.5 text-xs" disabled={traerXml.isPending}
+                  onClick={() => traerXml.mutate()}>
+                  {traerXml.isPending
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <RefreshCw className="h-3.5 w-3.5" />}
+                  Extraer qué se compró (XML)
+                </button>
                 <button className="btn-secondary px-3 py-1.5 text-xs" disabled={diagnosticar.isPending}
                   onClick={() => diagnosticar.mutate()}>
                   {diagnosticar.isPending
@@ -217,9 +237,9 @@ export function BsaleConexion() {
               </div>
 
               <p className="mt-3 text-xs text-slate-500">
-                Las compras vienen de dos recursos distintos de Bsale y se cruzan acá: el libro de
-                compras trae al proveedor y los montos; la recepción de mercadería trae el costo de
-                cada producto.
+                El libro de compras de Bsale trae al proveedor y los montos, pero no el detalle.
+                Ese detalle se saca del XML del documento tributario, que la propia API entrega:
+                de ahí salen los productos comprados y el costo por kilo.
               </p>
             </div>
           ) : (

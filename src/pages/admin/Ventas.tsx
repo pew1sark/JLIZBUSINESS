@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, FileText, Receipt, Wallet } from 'lucide-react'
+import { Download, FileText, Receipt, Search, Wallet } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useOperacion } from '../../lib/queries'
 import type { Invoice, Order, PaymentMethod } from '../../lib/types'
@@ -10,9 +10,9 @@ import {
 } from '../../lib/constants'
 import { dateShort, money, moneyShort } from '../../lib/format'
 import { descargarCsv } from '../../lib/csv'
+import { FiltroPeriodo, Paginador } from '../../components/Filtros'
+import { rangoDe, type Periodo } from '../../lib/periodo'
 import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
-
-type Rango = 'hoy' | 'semana' | 'mes' | 'todo'
 
 /**
  * Las facturas se emiten en el sistema de facturación electrónica y se importan;
@@ -33,26 +33,24 @@ const DOC_LABEL: Record<string, string> = {
 export function Ventas() {
   const qc = useQueryClient()
   const operacion = useOperacion()
-  const [rango, setRango] = useState<Rango>('mes')
+  const [periodo, setPeriodo] = useState<Periodo>(() => rangoDe('mes'))
+  const [buscar, setBuscar] = useState('')
+  const [estadoPago, setEstadoPago] = useState<'todos' | 'pendiente' | 'parcial' | 'pagado' | 'vencido'>('todos')
+  const [pagina, setPagina] = useState(0)
+  const [porPagina, setPorPagina] = useState(50)
   const [fuente, setFuente] = useState<Fuente>('facturas')
   const [verFactura, setVerFactura] = useState<FacturaFila | null>(null)
   const [soloDeuda, setSoloDeuda] = useState(false)
   const [cobrar, setCobrar] = useState<Order | null>(null)
   const [factura, setFactura] = useState<Order | null>(null)
 
-  const desde = useMemo(() => {
-    const d = new Date()
-    if (rango === 'hoy') d.setHours(0, 0, 0, 0)
-    else if (rango === 'semana') d.setDate(d.getDate() - 7)
-    else if (rango === 'mes') d.setDate(1)
-    else return null
-    return d.toISOString()
-  }, [rango])
-
-  const desdeFecha = useMemo(() => (desde ? desde.slice(0, 10) : null), [desde])
+  const desdeFecha = periodo.desde
+  const hastaFecha = periodo.hasta
+  const desde = desdeFecha ? `${desdeFecha}T00:00:00` : null
+  const hasta = hastaFecha ? `${hastaFecha}T23:59:59` : null
 
   const ventas = useQuery({
-    queryKey: ['ventas', rango],
+    queryKey: ['ventas', desdeFecha, hastaFecha],
     queryFn: async () => {
       let q = supabase
         .from('orders')
@@ -61,6 +59,7 @@ export function Ventas() {
         .order('order_date', { ascending: false })
         .limit(400)
       if (desde) q = q.gte('order_date', desde)
+      if (hasta) q = q.lte('order_date', hasta)
       const { data, error } = await q
       if (error) throw error
       return data as Order[]
@@ -68,7 +67,7 @@ export function Ventas() {
   })
 
   const facturas = useQuery({
-    queryKey: ['facturas-emitidas', rango],
+    queryKey: ['facturas-emitidas', desdeFecha, hastaFecha],
     queryFn: async () => {
       let q = supabase
         .from('invoices')
@@ -77,6 +76,7 @@ export function Ventas() {
         .order('doc_number', { ascending: false })
         .limit(1000)
       if (desdeFecha) q = q.gte('issued_at', desdeFecha)
+      if (hastaFecha) q = q.lte('issued_at', hastaFecha)
       const { data, error } = await q
       if (error) throw error
       return data as unknown as FacturaFila[]
@@ -88,9 +88,28 @@ export function Ventas() {
     [ventas.data, soloDeuda],
   )
 
-  const facturasFiltradas = useMemo(
-    () => (facturas.data ?? []).filter((f) => (soloDeuda ? f.payment_status !== 'pagado' : true)),
-    [facturas.data, soloDeuda],
+  const facturasFiltradas = useMemo(() => {
+    const q = buscar.trim().toLowerCase()
+    return (facturas.data ?? []).filter((f) => {
+      if (soloDeuda && f.payment_status === 'pagado') return false
+      if (estadoPago !== 'todos' && f.payment_status !== estadoPago) return false
+      if (q && !f.doc_number.toLowerCase().includes(q)
+            && !(f.customers?.name ?? '').toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [facturas.data, soloDeuda, estadoPago, buscar])
+
+  // La página se reinicia al cambiar cualquier filtro: quedarse en la
+  // página 7 de un resultado que ahora tiene 2 confunde.
+  useEffect(() => { setPagina(0) }, [desdeFecha, hastaFecha, buscar, estadoPago, soloDeuda, fuente])
+
+  const facturasPagina = useMemo(
+    () => facturasFiltradas.slice(pagina * porPagina, (pagina + 1) * porPagina),
+    [facturasFiltradas, pagina, porPagina],
+  )
+  const pedidosPagina = useMemo(
+    () => filtradas.slice(pagina * porPagina, (pagina + 1) * porPagina),
+    [filtradas, pagina, porPagina],
   )
 
   const totalesFactura = useMemo(() => {
@@ -161,7 +180,7 @@ export function Ventas() {
         f.amount_paid, Number(f.total) - Number(f.amount_paid), f.payment_status,
       ])
     }
-    descargarCsv(filas, `facturas-${rango}`)
+    descargarCsv(filas, `facturas-${periodo.desde ?? 'todo'}`)
   }
 
   function exportar() {
@@ -178,7 +197,7 @@ export function Ventas() {
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `ventas-${rango}.csv`
+    a.download = `ventas-${periodo.desde ?? 'todo'}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -190,17 +209,7 @@ export function Ventas() {
         subtitle="Facturas emitidas, pedidos internos y cobros del período"
         actions={
           <>
-            <div className="flex gap-1 rounded-lg bg-slate-200/60 p-1 text-sm">
-              {(['hoy', 'semana', 'mes', 'todo'] as Rango[]).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setRango(r)}
-                  className={`rounded-md px-3 py-1 font-medium capitalize ${rango === r ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500'}`}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
+            <FiltroPeriodo valor={periodo} onChange={setPeriodo} />
             <button onClick={fuente === 'facturas' ? exportarFacturas : exportar} className="btn-secondary">
               <Download className="h-4 w-4" /> CSV
             </button>
@@ -249,10 +258,25 @@ export function Ventas() {
         </p>
       )}
 
-      <label className="mt-3 mb-2 flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-        <input type="checkbox" checked={soloDeuda} onChange={(e) => setSoloDeuda(e.target.checked)} className="rounded border-slate-300" />
-        Ver solo lo que está pendiente de cobro
-      </label>
+      <div className="mt-3 mb-2 flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 sm:max-w-xs">
+          <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400" />
+          <input className="input pl-9" placeholder="Buscar por documento o cliente…"
+            value={buscar} onChange={(e) => setBuscar(e.target.value)} />
+        </div>
+        <select className="input w-auto" value={estadoPago}
+          onChange={(e) => setEstadoPago(e.target.value as typeof estadoPago)}>
+          <option value="todos">Todo estado de pago</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="parcial">Parcial</option>
+          <option value="vencido">Vencido</option>
+          <option value="pagado">Pagado</option>
+        </select>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={soloDeuda} onChange={(e) => setSoloDeuda(e.target.checked)} className="rounded border-slate-300" />
+          Solo lo pendiente de cobro
+        </label>
+      </div>
 
       {fuente === 'facturas' && (
         <>
@@ -280,7 +304,7 @@ export function Ventas() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {facturasFiltradas.map((f) => {
+                {facturasPagina.map((f) => {
                   const saldo = Number(f.total) - Number(f.amount_paid)
                   const esNC = f.doc_type === 'nota_credito'
                   return (
@@ -311,6 +335,12 @@ export function Ventas() {
               </tbody>
             </TableWrap>
           )}
+          {facturasFiltradas.length > 0 && (
+            <div className="card mt-3">
+              <Paginador total={facturasFiltradas.length} pagina={pagina} porPagina={porPagina}
+                onPagina={setPagina} onPorPagina={setPorPagina} />
+            </div>
+          )}
         </>
       )}
 
@@ -338,7 +368,7 @@ export function Ventas() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtradas.map((o) => {
+            {pedidosPagina.map((o) => {
               const saldo = Number(o.total) - Number(o.amount_paid)
               return (
                 <tr key={o.id} className="hover:bg-slate-50">
@@ -377,6 +407,12 @@ export function Ventas() {
             })}
           </tbody>
         </TableWrap>
+      )}
+      {filtradas.length > 0 && (
+        <div className="card mt-3">
+          <Paginador total={filtradas.length} pagina={pagina} porPagina={porPagina}
+            onPagina={setPagina} onPorPagina={setPorPagina} />
+        </div>
       )}
         </>
       )}
