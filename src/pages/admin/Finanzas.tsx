@@ -12,6 +12,8 @@ import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, Ta
 
 interface Kpis {
   venta_mes: number
+  venta_costeada: number
+  cobertura_costo_pct: number
   costo_mes: number
   margen_bruto: number
   margen_bruto_pct: number
@@ -123,7 +125,10 @@ export function Finanzas() {
   }
 
   const k = kpis.data
-  const enPerdida = (k?.resultado_estimado ?? 0) < 0
+  // Sin costos cargados no hay margen que mostrar: cualquier resultado sería inventado.
+  const sinCosto = (k?.cobertura_costo_pct ?? 0) === 0
+  const costoParcial = !sinCosto && (k?.cobertura_costo_pct ?? 100) < 95
+  const enPerdida = !sinCosto && (k?.resultado_estimado ?? 0) < 0
 
   function exportarCobranza() {
     const filas = [['Pedido', 'Cliente', 'Vence', 'Total', 'Pagado', 'Saldo', 'Días de atraso', 'Factura']]
@@ -148,17 +153,53 @@ export function Finanzas() {
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
             <StatCard label="Venta del mes" value={moneyShort(k.venta_mes)} icon={<TrendingUp className="h-4 w-4" />} />
-            <StatCard label="Margen bruto" value={pct(k.margen_bruto_pct)} hint={money(k.margen_bruto)} tone={k.margen_bruto_pct >= 25 ? 'positive' : 'warning'} />
+            <StatCard
+              label="Margen bruto"
+              value={sinCosto ? '—' : pct(k.margen_bruto_pct)}
+              hint={sinCosto ? 'falta cargar el costo' : money(k.margen_bruto)}
+              tone={sinCosto ? 'default' : k.margen_bruto_pct >= 25 ? 'positive' : 'warning'}
+            />
             <StatCard label="Costos fijos al día" value={moneyShort(k.costos_fijos_proporcional)} hint={`de ${moneyShort(k.costos_fijos_mes)} al mes`} />
             <StatCard
               label="Resultado estimado"
-              value={moneyShort(k.resultado_estimado)}
-              tone={enPerdida ? 'danger' : 'positive'}
+              value={sinCosto ? '—' : moneyShort(k.resultado_estimado)}
+              hint={sinCosto ? 'no calculable' : undefined}
+              tone={sinCosto ? 'default' : enPerdida ? 'danger' : 'positive'}
               icon={enPerdida ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
             />
             <StatCard label="Por cobrar" value={moneyShort(k.por_cobrar)} hint={`${moneyShort(k.vencido)} vencido`} tone={k.vencido > 0 ? 'danger' : 'default'} />
             <StatCard label="Por pagar" value={moneyShort(k.por_pagar)} tone={k.por_pagar > 0 ? 'warning' : 'default'} icon={<Wallet className="h-4 w-4" />} />
           </div>
+
+          {sinCosto && (
+            <div className="mt-3 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+              <div>
+                <p className="font-medium text-slate-800">
+                  El margen del mes no se puede calcular todavía
+                </p>
+                <p className="text-slate-600">
+                  Se facturaron {money(k.venta_mes)}, pero ninguna de esas ventas tiene el costo
+                  cargado, así que cualquier margen o resultado sería inventado. El costo entra
+                  al registrar las compras del período en <span className="font-medium">Compras</span>.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {costoParcial && (
+            <div className="mt-3 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div>
+                <p className="font-medium text-amber-900">Margen calculado sobre parte del mes</p>
+                <p className="text-amber-800/80">
+                  Solo {pct(k.cobertura_costo_pct)} de la venta del mes tiene costo cargado
+                  ({money(k.venta_costeada)} de {money(k.venta_mes)}). El margen que se muestra
+                  corresponde a esa parte.
+                </p>
+              </div>
+            </div>
+          )}
 
           {enPerdida && (
             <div className="mt-3 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm">

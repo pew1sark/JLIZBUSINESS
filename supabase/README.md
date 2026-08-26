@@ -18,6 +18,7 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 | `ar_cartola_y_portal` | `customer_statement`, `mark_overdue_orders` extendida a facturas, `finance_kpis` con documentos importados, ajuste `cobranza` en `settings`. |
 | `portal_pagos_cliente` | `portal_link`, `portal_revoke`, `portal_get` y `portal_report_payment` (las dos últimas con `execute` para `anon`), `confirm_payment_report`, `reject_payment_report`. |
 | `importacion_ventas` + `importacion_ventas_robusta` + `staging_fecha_texto` | `sales_import_batches` / `sales_import_rows` y `process_sales_import`: carga repetible del detalle de ventas del sistema de facturación electrónica. |
+| `dashboard_incluye_facturas` + `finance_kpis_margen_honesto` | `dashboard_kpis` y `finance_kpis` pasan a sumar los documentos importados además de los pedidos, sin doble conteo. La venta es siempre neta. El margen se calcula solo sobre la venta con costo cargado y se expone `cobertura_costo_pct`: sin eso, las facturas importadas (que no traen costo) daban 100% de margen. |
 
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 

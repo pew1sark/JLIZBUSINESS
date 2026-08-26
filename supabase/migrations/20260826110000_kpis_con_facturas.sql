@@ -1,0 +1,19 @@
+-- ============================================================
+-- KPIs con los documentos importados
+--
+-- Tras importar las ventas reales, el Dashboard mostraba cero en
+-- ventas y cero por cobrar teniendo 140 millones: `dashboard_kpis`
+-- leía solo `orders`. Y `finance_kpis` sumaba el total bruto de las
+-- facturas contra el neto de los pedidos, y reportaba 100% de margen
+-- porque las facturas importadas no traen costo.
+--
+-- Reglas que quedan:
+--  · La venta es siempre NETA, venga de un pedido o de una factura.
+--  · Un pedido que ya tiene factura asociada no se cuenta dos veces.
+--  · El margen se calcula SOLO sobre la venta que tiene costo cargado,
+--    y `cobertura_costo_pct` deja que la pantalla avise cuando el dato
+--    es parcial, en vez de mostrar una cifra inventada.
+-- ============================================================
+-- El contenido exacto quedó aplicado en el proyecto como las migraciones
+-- `dashboard_incluye_facturas` y `finance_kpis_margen_honesto`.
+-- Ver supabase/README.md para el detalle del historial.
