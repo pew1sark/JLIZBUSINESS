@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import {
-  AlertTriangle, Boxes, ClipboardList, MapPin, Package, Receipt, TrendingUp, Wallet,
+  AlertTriangle, Boxes, ClipboardList, MapPin, Package, Receipt, RefreshCw, TrendingUp, Wallet,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { Mapa, type PuntoMapa } from '../../components/Mapa'
 import { CUSTOMER_TYPE_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE } from '../../lib/constants'
@@ -16,6 +17,26 @@ import { dateShort, kg, money, moneyShort, pct, relative } from '../../lib/forma
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton, StatCard } from '../../components/ui'
 import { FiltroPeriodo } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
+
+/**
+ * Cada cuánto se vuelve a preguntar. El panel es una pantalla que queda abierta
+ * en el mostrador: si no se refresca sola, muestra lo de hace horas sin avisar.
+ * Los números salen de qué tan rápido cambia cada cosa, no de un valor único:
+ * una factura entra en cualquier momento, el mapa de clientes casi nunca.
+ *
+ * Con la pestaña en segundo plano el reloj se detiene solo (React Query no
+ * consulta en background), y al volver el refresco por foco pone todo al día.
+ */
+const REFRESCO = {
+  /** Facturas y cobros: es lo que se mira de reojo durante el día. */
+  vivo: 60_000,
+  /** Series y rankings: se mueven con las mismas facturas, pero pesan más. */
+  agregados: 120_000,
+  /** Stock: cambia con recepciones y despachos, no minuto a minuto. */
+  stock: 120_000,
+  /** Fichas de clientes: cambian cuando alguien las edita. */
+  lento: 300_000,
+} as const
 
 interface SeriePunto {
   dia: string
@@ -118,7 +139,7 @@ export function Dashboard() {
 
   const kpis = useQuery({
     queryKey: ['dashboard-kpis'],
-    refetchInterval: 60_000,
+    refetchInterval: REFRESCO.vivo,
     queryFn: async () => {
       const { data, error } = await supabase.rpc('dashboard_kpis')
       if (error) throw error
@@ -128,6 +149,7 @@ export function Dashboard() {
 
   const serie = useQuery({
     queryKey: ['panel-serie', periodo.desde, periodo.hasta, cliente],
+    refetchInterval: REFRESCO.agregados,
     queryFn: async () => {
       const { data, error } = await supabase.rpc('panel_series', {
         _desde: periodo.desde, _hasta: periodo.hasta, _customer_id: cliente || null,
@@ -176,6 +198,7 @@ export function Dashboard() {
 
   const clientesRanking = useQuery({
     queryKey: ['panel-clientes', periodo.desde, periodo.hasta],
+    refetchInterval: REFRESCO.agregados,
     queryFn: async () => {
       const { data, error } = await supabase.rpc('panel_clientes', {
         _desde: periodo.desde, _hasta: periodo.hasta, _limite: 8,
@@ -188,6 +211,7 @@ export function Dashboard() {
 
   const stock = useQuery({
     queryKey: ['stock-resumen'],
+    refetchInterval: REFRESCO.stock,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('v_product_stock')
@@ -201,7 +225,7 @@ export function Dashboard() {
 
   const actividad = useQuery({
     queryKey: ['actividad-reciente'],
-    refetchInterval: 60_000,
+    refetchInterval: REFRESCO.vivo,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('invoices')
@@ -216,6 +240,7 @@ export function Dashboard() {
 
   const clientesMapa = useQuery({
     queryKey: ['clientes-mapa'],
+    refetchInterval: REFRESCO.lento,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('v_clientes_mapa')
@@ -239,6 +264,7 @@ export function Dashboard() {
 
   const topProductos = useQuery({
     queryKey: ['panel-productos', periodo.desde, periodo.hasta, cliente],
+    refetchInterval: REFRESCO.agregados,
     queryFn: async () => {
       const { data, error } = await supabase.rpc('panel_productos', {
         _desde: periodo.desde, _hasta: periodo.hasta,
@@ -307,6 +333,7 @@ export function Dashboard() {
         subtitle={`Estado del negocio · ${new Date().toLocaleDateString('es-CL', {
           weekday: 'long', day: 'numeric', month: 'long',
         })}`}
+        actions={<EstadoActualizacion />}
       />
 
       {kpis.isError && <ErrorState error={kpis.error} />}
@@ -645,5 +672,46 @@ function ResumenDato({ label, valor, nota }: { label: string; valor: string; not
       <p className="mt-0.5 text-base font-semibold tabular-nums text-navy-900">{valor}</p>
       {nota && <p className="text-xs text-slate-400">{nota}</p>}
     </div>
+  )
+}
+
+/**
+ * Cuándo se actualizó el panel por última vez, y un botón para forzarlo.
+ *
+ * El panel se refresca solo, pero eso no se ve: sin este indicador uno no sabe
+ * si está mirando lo de ahora o lo de hace una hora, y termina recargando la
+ * página entera por las dudas. La hora sale de la consulta que más se mueve.
+ */
+function EstadoActualizacion() {
+  const qc = useQueryClient()
+  // Se engancha a la consulta que ya montó el panel, sin lanzar otra: por eso
+  // va sin queryFn y deshabilitada. Depende de vivir dentro del panel; suelto,
+  // no tendría de dónde leer la hora.
+  const kpis = useQuery({ queryKey: ['dashboard-kpis'], enabled: false })
+  const [, tick] = useState(0)
+
+  // El texto es "hace 2 min": sin un reloj propio se quedaría congelado en
+  // "hace instantes" hasta que llegue el siguiente dato.
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 15_000)
+    return () => clearInterval(t)
+  }, [])
+
+  const cuando = kpis.dataUpdatedAt
+  // Los dos hooks se llaman siempre: dentro de un `||` el segundo quedaría
+  // condicionado al primero y React exige el mismo orden en cada render.
+  const bajandoKpis = useIsFetching({ queryKey: ['dashboard-kpis'] })
+  const bajandoDocs = useIsFetching({ queryKey: ['actividad-reciente'] })
+  const refrescando = bajandoKpis + bajandoDocs > 0
+
+  return (
+    <button
+      onClick={() => qc.invalidateQueries()}
+      title="Volver a consultar ahora"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-500 hover:border-slate-300 hover:text-slate-700"
+    >
+      <RefreshCw className={clsx('h-3.5 w-3.5', refrescando && 'animate-spin text-sea-600')} />
+      {refrescando ? 'Actualizando…' : cuando ? `Actualizado ${relative(new Date(cuando).toISOString())}` : 'Actualizar'}
+    </button>
   )
 }

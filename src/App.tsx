@@ -38,7 +38,16 @@ const WorkerReportes = lazy(() => import('./pages/worker/WorkerReportes').then((
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false },
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+      // Al volver a la pestaña —o a la aplicación en el teléfono— se refresca
+      // lo que ya esté vencido. Estaba apagado, y como la sincronización con
+      // Bsale trae documentos nuevos cada 30 minutos, uno volvía a la pantalla
+      // y seguía viendo lo de antes sin ninguna señal de que estaba viejo.
+      // El staleTime de 30 s evita que esto dispare consultas a cada rato.
+      refetchOnWindowFocus: true,
+    },
   },
 })
 
