@@ -7,7 +7,7 @@ vive en el proyecto Supabase; acá queda la referencia de qué hace cada una.
 |---|---|---|
 | `bsale-connect` | sí (admin) | Recibe el access token, **lo prueba contra `GET /v1/users.json?limit=1`** y solo si Bsale responde bien lo guarda cifrado en Vault y crea la conexión. El token nunca vuelve al navegador. |
 | `bsale-sync` | sí (admin) | Trae el libro de compras (`third_party_documents`, por año/mes), las recepciones (`stocks/receptions`) y sus detalles con costo. Va a ~8 req/s, reintenta con espera creciente ante 429/5xx, corta por número de páginas y guarda un cursor para retomar. |
-| `bsale-cron` | **no** | La que dispara `pg_cron`. Corre la cadena completa sobre el mes en curso y el anterior. Exige `x-cron-secret` contra el secreto de Vault; sin ese encabezado no hace nada. |
+| `bsale-cron` | **no** | La que dispara `pg_cron` cada 30 min. Corre la cadena completa sobre el mes en curso y el anterior: **compras** (libro de compras → XML del DTE → `purchases` → costos) y **ventas** (`/documents.json` → `bsale_sales_documents` → `invoices`). Exige `x-cron-secret` contra el secreto de Vault; sin ese encabezado no hace nada. Acepta `{"solo":"ventas"}` y `{"desde":"YYYY-MM-DD","hasta":"..."}` para forzar una ventana concreta. |
 | `bsale-webhook` | **no** | Recibe los avisos de Bsale. Como la API no documenta firma, exige `?key=<BSALE_WEBHOOK_SECRET>` y trata el payload como no confiable: solo registra qué recurso releer. |
 
 ## Secretos que hay que configurar en Supabase
@@ -32,3 +32,41 @@ anónimas.
 
 Mientras tanto la sincronización se dispara desde la aplicación, que sí manda
 la sesión: *Configuración → Conexión con Bsale*.
+
+
+## Qué se sincroniza solo
+
+| | Origen en Bsale | Destino | Cada cuánto |
+|---|---|---|---|
+| Compras | `third_party_documents` (libro de compras del SII) + XML del DTE | `suppliers`, `purchases`, `purchase_items` | 30 min |
+| Ventas | `documents.json` (documentos emitidos) | `customers`, `invoices`, `invoice_items` | 30 min |
+
+Ambas corren sobre el mes en curso y el anterior. El histórico anterior a esa
+ventana se carga una vez a mano y no se vuelve a tocar.
+
+### Qué documentos de venta entran y cuáles no
+
+`/documents.json` devuelve **todo** lo que sale del sistema. Solo se vuelcan los
+que son tributarios, por su `codeSii`:
+
+| Entra | No entra |
+|---|---|
+| 33 factura afecta | (vacío) nota de venta y cotización |
+| 34 factura exenta | 52 guía de despacho |
+| 39 / 41 boleta | anulados (`state = 1` o `cancellationStatus ≠ 0`) |
+| 56 nota de débito | documentos sin RUT de cliente |
+| 61 nota de crédito (entra en negativo) | |
+
+### Reglas que hay que respetar al tocar esto
+
+- **El volcado nunca pisa `amount_paid` ni `payment_status`.** Los mantiene
+  `recalc_receivable` desde las imputaciones; sobrescribirlos borraría la
+  cobranza registrada a mano. Por eso el insert es `on conflict do nothing`.
+- **Es idempotente por `doc_type` + `doc_number`.** Se puede correr las veces
+  que sea sin duplicar.
+- **El nombre del producto sale del SKU.** La API entrega la variante con su
+  código de barra pero sin el nombre, así que se resuelve contra
+  `products.sku`. Si un SKU no está en el catálogo, la línea queda con la
+  descripción de la variante.
+- **`expand=[details]` trae como máximo 25 líneas por documento.** Cuando hay
+  más, la función las pide por separado.
