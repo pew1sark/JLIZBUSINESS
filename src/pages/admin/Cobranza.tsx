@@ -16,6 +16,8 @@ import { descargarCsv } from '../../lib/csv'
 import { FiltroPeriodo, Paginador, ThOrden } from '../../components/Filtros'
 import { ordenar, useOrden } from '../../lib/orden'
 import { nombreMes, rangoDe, type Periodo } from '../../lib/periodo'
+import { ReporteCobro } from '../../components/ReporteCobro'
+import { DetalleFactura, type FacturaRef } from '../../components/DetalleFactura'
 import {
   Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap,
 } from '../../components/ui'
@@ -56,6 +58,7 @@ export function Cobranza() {
   const [cartola, setCartola] = useState<string | null>(null)
   const [cobrar, setCobrar] = useState<{ customer_id: string; cliente: string } | null>(null)
   const [reimputar, setReimputar] = useState<PagoSinImputar | null>(null)
+  const [verFactura, setVerFactura] = useState<FacturaRef | null>(null)
   // En la pestaña de facturas el período puede leerse de dos formas: cuándo se
   // emitió o cuándo se pagó. Son preguntas distintas ("qué facturé en marzo"
   // contra "qué me pagaron en marzo") y las dos se hacen igual de seguido.
@@ -445,7 +448,8 @@ export function Cobranza() {
 
       {pestana === 'documentos' && (
         <>
-          <TablaDocumentos filas={documentosPagina} cargando={documentos.isLoading} />
+          <TablaDocumentos filas={documentosPagina} cargando={documentos.isLoading}
+            onVer={setVerFactura} />
           {documentosFiltrados.length > 0 && (
             <div className="card mt-3">
               <Paginador total={documentosFiltrados.length} pagina={pagina} porPagina={porPagina}
@@ -458,7 +462,8 @@ export function Cobranza() {
       {pestana === 'facturas' && (
         <>
           <TablaFacturas filas={facturasPagina} cargando={facturas.isLoading}
-            ejeFecha={ejeFecha} orden={ordFactura.orden} onOrden={ordFactura.cambiar} />
+            ejeFecha={ejeFecha} orden={ordFactura.orden} onOrden={ordFactura.cambiar}
+            onVer={setVerFactura} />
           {facturasFiltradas.length > 0 && (
             <div className="card mt-3">
               <Paginador total={facturasFiltradas.length} pagina={pagina} porPagina={porPagina}
@@ -498,6 +503,8 @@ export function Cobranza() {
       {pestana === 'avisos' && (
         <PanelAvisos avisos={avisos.data ?? []} cargando={avisos.isLoading} onHecho={refrescar} />
       )}
+
+      <DetalleFactura factura={verFactura} onClose={() => setVerFactura(null)} />
 
       {cartola && <ModalCartola customerId={cartola} onClose={() => setCartola(null)} />}
 
@@ -609,7 +616,13 @@ function linkWhatsapp(c: EstadoCuentaCliente) {
 }
 
 // ---------------------------------------------------------------- documentos
-function TablaDocumentos({ filas, cargando }: { filas: CuentaPorCobrar[]; cargando: boolean }) {
+function TablaDocumentos({
+  filas, cargando, onVer,
+}: {
+  filas: CuentaPorCobrar[]
+  cargando: boolean
+  onVer: (f: FacturaRef) => void
+}) {
   if (cargando) return <Skeleton className="h-64" />
   if (!filas.length) {
     return <Card><EmptyState title="Sin documentos por cobrar" /></Card>
@@ -630,10 +643,20 @@ function TablaDocumentos({ filas, cargando }: { filas: CuentaPorCobrar[]; cargan
       </thead>
       <tbody className="divide-y divide-slate-100">
         {filas.map((d) => (
-          <tr key={`${d.origen}-${d.ref_id}`} className="hover:bg-slate-50">
+          // Solo las facturas tienen detalle de líneas: un pedido interno o un
+          // saldo arrastrado no tiene qué mostrar.
+          <tr key={`${d.origen}-${d.ref_id}`}
+            className={clsx('hover:bg-slate-50', d.invoice_id && 'cursor-pointer')}
+            onClick={() => d.invoice_id && onVer({
+              id: d.invoice_id, doc_type: d.doc_type,
+              doc_number: d.doc_number ?? d.code, cliente: d.cliente,
+            })}>
             <td className="td">
               <p className="font-medium text-navy-900">{d.doc_number ?? d.code}</p>
-              <p className="text-xs text-slate-400">{etiquetaDoc(d.doc_type)}</p>
+              <p className="text-xs text-slate-400">
+                {etiquetaDoc(d.doc_type)}
+                {d.invoice_id && <span className="ml-1 text-slate-300">· ver detalle</span>}
+              </p>
             </td>
             <td className="td text-slate-600">{d.cliente}</td>
             <td className="td text-slate-500">{dateShort(d.issued_at)}</td>
@@ -670,13 +693,14 @@ const etiquetaDoc = (t: string) =>
 type ColFactura = 'doc' | 'cliente' | 'emitida' | 'vence' | 'total' | 'saldo' | 'pago' | 'dias' | 'estado'
 
 function TablaFacturas({
-  filas, cargando, ejeFecha, orden, onOrden,
+  filas, cargando, ejeFecha, orden, onOrden, onVer,
 }: {
   filas: FacturaConPago[]
   cargando: boolean
   ejeFecha: 'emision' | 'pago'
   orden: OrdenFactura
   onOrden: (c: ColFactura, d?: 'asc' | 'desc') => void
+  onVer: (f: FacturaRef) => void
 }) {
   if (cargando) return <Card><Skeleton className="h-64" /></Card>
   if (filas.length === 0) {
@@ -711,7 +735,9 @@ function TablaFacturas({
           const saldo = Number(f.saldo)
           const esNC = f.doc_type === 'nota_credito'
           return (
-            <tr key={f.invoice_id} className="hover:bg-slate-50">
+            <tr key={f.invoice_id} className="cursor-pointer hover:bg-slate-50"
+              onClick={() => onVer({ id: f.invoice_id, doc_type: f.doc_type,
+                doc_number: f.doc_number, cliente: f.cliente })}>
               <td className="td">
                 <p className="font-medium text-navy-900">{f.doc_number}</p>
                 <p className="text-xs text-slate-400">{etiquetaDoc(f.doc_type)}</p>
@@ -1497,6 +1523,21 @@ function ModalCartola({
             <Dato label="Saldo neto" valor={money(c.saldo_neto)} />
           </div>
 
+          <ReporteCobro
+            customerId={customerId}
+            cliente={c.cliente}
+            deudaTotal={Number(c.deuda_total)}
+            whatsappCliente={c.whatsapp ?? c.phone}
+            documentos={cartola.data.documentos.map((d) => ({
+              documento: d.doc_number ?? d.code,
+              issued_at: d.issued_at,
+              due_date: d.due_date,
+              total: Number(d.total),
+              saldo: Number(d.saldo),
+              dias_atraso: d.dias_atraso,
+            }))}
+          />
+
           <div className="rounded-lg border border-slate-200 p-3">
             <div className="flex flex-wrap items-center gap-2">
               <Link2 className="h-4 w-4 text-slate-400" />
@@ -1631,6 +1672,18 @@ function Dato({ label, valor, tono }: { label: string; valor: string; tono?: 'bu
 type Orden = 'emision' | 'vencimiento' | 'monto'
 type Filtro = 'todas' | 'vencidas' | 'graves' | 'por_vencer' | 'abonadas' | 'pagadas'
 
+/** Lo que el selector de facturas le informa al resumen de arriba. */
+interface ResumenSeleccion {
+  documentos: number
+  saldo: number
+  vencido: number
+  seleccionadas: number
+  montoSeleccionado: number
+  filtro: Filtro
+  mes: string
+  totalDocumentos: number
+}
+
 const FILTRO_LABEL: Record<Filtro, string> = {
   todas: 'Por cobrar',
   vencidas: 'Vencidas',
@@ -1665,7 +1718,7 @@ function Vencimiento({ doc }: { doc: CuentaPorCobrar }) {
 }
 
 function SelectorFacturas({
-  documentos, historial, cargando, reparto, setReparto, disponible,
+  documentos, historial, cargando, reparto, setReparto, disponible, onResumen,
 }: {
   documentos: CuentaPorCobrar[]
   /** Todas las facturas del cliente, pagadas incluidas. Sirve para consultar
@@ -1675,6 +1728,8 @@ function SelectorFacturas({
   reparto: Record<string, string>
   setReparto: (f: (r: Record<string, string>) => Record<string, string>) => void
   disponible: number
+  /** Avisa hacia arriba qué quedó visible, para que el resumen no se desincronice. */
+  onResumen?: (r: ResumenSeleccion) => void
 }) {
   const [orden, setOrden] = useState<Orden>('emision')
   const [filtro, setFiltro] = useState<Filtro>('todas')
@@ -1723,6 +1778,25 @@ function SelectorFacturas({
 
   const saldoVisible = visibles.reduce((a, d) => a + Number(d.saldo), 0)
   const seleccionadas = Object.keys(reparto).filter((k) => Number(reparto[k]) > 0).length
+  const montoSeleccionado = Object.values(reparto).reduce((a, v) => a + (Number(v) || 0), 0)
+  const vencidoVisible = visibles.filter((d) => d.dias_atraso > 0)
+    .reduce((a, d) => a + Number(d.saldo), 0)
+
+  // El resumen de arriba tiene que mirar lo mismo que la lista: si se filtra
+  // por marzo, "por cobrar" no puede seguir mostrando el total del año.
+  useEffect(() => {
+    onResumen?.({
+      documentos: filtro === 'pagadas' ? pagadasVisibles.length : visibles.length,
+      saldo: saldoVisible,
+      vencido: vencidoVisible,
+      seleccionadas,
+      montoSeleccionado,
+      filtro,
+      mes,
+      totalDocumentos: documentos.length,
+    })
+  }, [onResumen, filtro, mes, visibles.length, pagadasVisibles.length,
+      saldoVisible, vencidoVisible, seleccionadas, montoSeleccionado, documentos.length])
 
   /** Reparte lo disponible entre las facturas visibles, en el orden en que se ven. */
   function repartir() {
@@ -2045,6 +2119,7 @@ function ModalCobrar({
   const [notas, setNotas] = useState('')
   const [reparto, setReparto] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
+  const [resumen, setResumen] = useState<ResumenSeleccion | null>(null)
 
   const cliente = clientes.find((c) => c.customer_id === customerId)
 
@@ -2176,10 +2251,11 @@ function ModalCobrar({
           <>
             <BarraImputacion monto={montoNum} imputado={imputado} />
             <ResumenPagoCliente customerId={customerId} />
+            <ResumenFiltrado r={resumen} />
             <SelectorFacturas documentos={docs.data ?? []} historial={historial.data ?? []}
               cargando={docs.isLoading}
               reparto={reparto} setReparto={setReparto}
-              disponible={montoNum} />
+              disponible={montoNum} onResumen={setResumen} />
           </>
         )}
 
@@ -2215,6 +2291,7 @@ function ModalImputar({
 }) {
   const [reparto, setReparto] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
+  const [resumen, setResumen] = useState<ResumenSeleccion | null>(null)
 
   const cliente = useQuery({
     queryKey: ['estado-cuenta', pago.customer_id],
@@ -2291,10 +2368,12 @@ function ModalImputar({
 
         <BarraImputacion monto={Number(pago.amount)} imputado={imputado} />
 
+        <ResumenFiltrado r={resumen} />
+
         <SelectorFacturas documentos={docs.data ?? []} historial={historial.data ?? []}
           cargando={docs.isLoading}
           reparto={reparto} setReparto={setReparto}
-          disponible={Number(pago.amount)} />
+          disponible={Number(pago.amount)} onResumen={setResumen} />
 
         {resto < -0.5 && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -2303,5 +2382,51 @@ function ModalImputar({
         )}
       </div>
     </Modal>
+  )
+}
+
+/**
+ * El resumen que acompaña al selector de facturas dentro del modal de cobro.
+ * Mira exactamente lo mismo que la lista de abajo: si se filtra por un mes o
+ * por las vencidas, estos números se mueven con el filtro. Antes el encabezado
+ * mostraba siempre el total del cliente y no calzaba con lo que se veía.
+ */
+function ResumenFiltrado({ r }: { r: ResumenSeleccion | null }) {
+  if (!r) return null
+  const acotado = r.filtro !== 'todas' || !!r.mes
+  const etiqueta = r.filtro === 'pagadas' ? 'facturas pagadas' : 'documentos por cobrar'
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+      <span className="font-medium text-slate-600">
+        {acotado ? 'Con el filtro aplicado' : 'Toda la deuda del cliente'}
+      </span>
+
+      <span className="text-slate-500">
+        <span className="font-semibold text-navy-900">{r.documentos}</span> {etiqueta}
+        {acotado && r.filtro !== 'pagadas' && (
+          <span className="text-slate-400"> de {r.totalDocumentos}</span>
+        )}
+      </span>
+
+      {r.filtro !== 'pagadas' && (
+        <>
+          <span className="text-slate-500">
+            Saldo <span className="font-semibold text-navy-900">{money(r.saldo)}</span>
+          </span>
+          {r.vencido > 0 && (
+            <span className="font-medium text-red-600">{money(r.vencido)} vencido</span>
+          )}
+        </>
+      )}
+
+      {r.mes && <span className="text-slate-400 capitalize">{nombreMes(r.mes)}</span>}
+
+      {r.seleccionadas > 0 && (
+        <span className="ml-auto rounded-full bg-sea-50 px-2.5 py-0.5 font-medium text-sea-700">
+          {r.seleccionadas} seleccionada(s) · {money(r.montoSeleccionado)}
+        </span>
+      )}
+    </div>
   )
 }

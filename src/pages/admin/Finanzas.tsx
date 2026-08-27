@@ -11,6 +11,7 @@ import { dateShort, money, moneyShort, pct } from '../../lib/format'
 import { descargarCsv } from '../../lib/csv'
 import { FiltroPeriodo } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
+import { ReporteCobro } from '../../components/ReporteCobro'
 import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
 
 interface Kpis {
@@ -36,7 +37,9 @@ interface Cobrar {
   ref_id: string
   order_id: string | null
   code: string
+  customer_id: string
   cliente: string
+  issued_at: string
   whatsapp: string | null
   phone: string | null
   due_date: string | null
@@ -104,6 +107,9 @@ export function Finanzas() {
   const [pestana, setPestana] = useState<Pestana>('cobranza')
   const [cobrar, setCobrar] = useState<Cobrar | null>(null)
   const [pagar, setPagar] = useState<Pagar | null>(null)
+  // Cobranza se hace por cliente, no documento por documento: el reporte junta
+  // todo lo que le debe uno solo y arma el mensaje de una vez.
+  const [reporte, setReporte] = useState<{ id: string; nombre: string } | null>(null)
   const [buscar, setBuscar] = useState('')
   const [periodo, setPeriodo] = useState<Periodo>(() => rangoDe('todo'))
 
@@ -178,6 +184,23 @@ export function Finanzas() {
     const bruto = p.reduce((a, x) => a + Number(x.total), 0)
     return { neto, iva, bruto, otros: bruto - iva - neto }
   }, [pagarFiltrado])
+
+  // Para el reporte se toma TODA la deuda del cliente, no la filtrada: el
+  // mensaje que se le manda tiene que estar completo aunque en pantalla se
+  // esté mirando un mes.
+  const docsDelReporte = useMemo(() => {
+    if (!reporte) return []
+    return (porCobrar.data ?? [])
+      .filter((c) => c.customer_id === reporte.id)
+      .map((c) => ({
+        documento: c.invoice_number ?? c.code,
+        issued_at: c.issued_at,
+        due_date: c.due_date,
+        total: Number(c.total),
+        saldo: Number(c.saldo),
+        dias_atraso: c.dias_atraso,
+      }))
+  }, [porCobrar.data, reporte])
 
   function refrescar() {
     qc.invalidateQueries({ queryKey: ['finance-kpis'] })
@@ -371,7 +394,14 @@ export function Finanzas() {
               <tbody className="divide-y divide-slate-100">
                 {cobrarFiltrado.map((c) => (
                   <tr key={c.ref_id} className="hover:bg-slate-50">
-                    <td className="td font-medium text-slate-900">{c.cliente}</td>
+                    <td className="td">
+                      <button
+                        className="text-left font-medium text-slate-900 hover:text-sea-600 hover:underline"
+                        onClick={() => setReporte({ id: c.customer_id, nombre: c.cliente })}
+                        title="Armar el reporte de cobro de este cliente">
+                        {c.cliente}
+                      </button>
+                    </td>
                     <td className="td">
                       <p className="font-mono text-xs">{c.code}</p>
                       {c.origen === 'saldo_inicial' && (
@@ -409,8 +439,10 @@ export function Finanzas() {
             </TableWrap>
           )}
           <Card className="mt-3 p-4 text-xs text-slate-500">
-            El recordatorio de WhatsApp abre la conversación con el mensaje escrito: monto, pedido y
-            días de atraso. Tú decides si enviarlo — el sistema no manda nada solo.
+            Toca el nombre de un cliente para armar el reporte de cobro con todas sus facturas
+            vencidas y enviárselo al encargado de pagos. El botón de WhatsApp de cada fila manda
+            el recordatorio de ese documento suelto. Tú decides si enviarlo — el sistema no manda
+            nada solo.
           </Card>
         </>
       )}
@@ -519,6 +551,22 @@ export function Finanzas() {
       )}
 
       {pestana === 'rentabilidad' && <Rentabilidad />}
+
+      {reporte && (
+        <Modal open onClose={() => setReporte(null)} wide
+          title={`Reporte de cobro · ${reporte.nombre}`}>
+          <ReporteCobro
+            customerId={reporte.id}
+            cliente={reporte.nombre}
+            deudaTotal={docsDelReporte.reduce((a, d) => a + d.saldo, 0)}
+            whatsappCliente={
+              (porCobrar.data ?? []).find((c) => c.customer_id === reporte.id)?.whatsapp
+              ?? (porCobrar.data ?? []).find((c) => c.customer_id === reporte.id)?.phone
+            }
+            documentos={docsDelReporte}
+          />
+        </Modal>
+      )}
 
       <CobroModal cobrar={cobrar} onClose={() => setCobrar(null)} onListo={refrescar} />
       <PagoModal pagar={pagar} onClose={() => setPagar(null)} onListo={refrescar} />

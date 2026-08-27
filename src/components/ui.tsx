@@ -75,7 +75,12 @@ export function StatCard({
         <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">{label}</p>
         {icon && <span className="text-slate-300 group-hover:text-sea-500">{icon}</span>}
       </div>
-      <p className={clsx('mt-2 text-2xl font-semibold tabular-nums', tones[tone])}>{value}</p>
+      {/* Un total exacto como $349.752.798 no cabe en 2xl y se corta: el tamaño
+          baja según el largo en vez de redondear el número. */}
+      <p className={clsx('mt-2 font-semibold tabular-nums', tones[tone],
+        value.length > 15 ? 'text-lg' : value.length > 12 ? 'text-xl' : 'text-2xl')}>
+        {value}
+      </p>
       {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
     </>
   )
@@ -141,7 +146,8 @@ export function Modal({
 }) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4">
+    // z-[1100] deja el modal por sobre cualquier capa de Leaflet, que llega a 1000.
+    <div className="fixed inset-0 z-[1100] flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4">
       <div
         className={clsx(
           'flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl',

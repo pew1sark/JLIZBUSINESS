@@ -8,11 +8,12 @@ import {
   ORDER_STATUS_LABEL, ORDER_STATUS_STYLE, PAYMENT_METHOD_LABEL,
   PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE,
 } from '../../lib/constants'
-import { dateShort, money, moneyShort } from '../../lib/format'
+import { dateShort, money } from '../../lib/format'
 import { descargarCsv } from '../../lib/csv'
 import { FiltroPeriodo, Paginador } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
 import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { DetalleFactura } from '../../components/DetalleFactura'
 
 /**
  * Las facturas se emiten en el sistema de facturación electrónica y se importan;
@@ -234,21 +235,21 @@ export function Ventas() {
 
       {fuente === 'facturas' ? (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <StatCard label="Venta neta" value={moneyShort(totalesFactura.neto)}
+          <StatCard label="Venta neta" value={money(totalesFactura.neto)}
             hint={`${facturasFiltradas.length} documentos`} />
-          <StatCard label="IVA" value={moneyShort(totalesFactura.ivaMonto)} />
-          <StatCard label="Total facturado" value={moneyShort(totalesFactura.bruto)} />
-          <StatCard label="Cobrado" value={moneyShort(totalesFactura.cobrado)} />
-          <StatCard label="Por cobrar" value={moneyShort(totalesFactura.pendiente)}
+          <StatCard label="IVA" value={money(totalesFactura.ivaMonto)} />
+          <StatCard label="Total facturado" value={money(totalesFactura.bruto)} />
+          <StatCard label="Cobrado" value={money(totalesFactura.cobrado)} />
+          <StatCard label="Por cobrar" value={money(totalesFactura.pendiente)}
             tone={totalesFactura.pendiente > 0 ? 'warning' : 'default'} />
         </div>
       ) : (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <StatCard label="Venta neta" value={moneyShort(totales.neto)} hint={`${filtradas.length} pedidos`} />
-        <StatCard label={`Total con IVA ${iva}%`} value={moneyShort(totales.neto * (1 + iva / 100))} />
-        <StatCard label="Margen" value={moneyShort(totales.margen)} hint={totales.neto > 0 ? `${Math.round((totales.margen / totales.neto) * 100)}%` : '—'} tone="positive" />
-        <StatCard label="Cobrado" value={moneyShort(totales.cobrado)} />
-        <StatCard label="Por cobrar" value={moneyShort(totales.pendiente)} tone={totales.pendiente > 0 ? 'warning' : 'default'} />
+        <StatCard label="Venta neta" value={money(totales.neto)} hint={`${filtradas.length} pedidos`} />
+        <StatCard label={`Total con IVA ${iva}%`} value={money(totales.neto * (1 + iva / 100))} />
+        <StatCard label="Margen" value={money(totales.margen)} hint={totales.neto > 0 ? `${Math.round((totales.margen / totales.neto) * 100)}%` : '—'} tone="positive" />
+        <StatCard label="Cobrado" value={money(totales.cobrado)} />
+        <StatCard label="Por cobrar" value={money(totales.pendiente)} tone={totales.pendiente > 0 ? 'warning' : 'default'} />
       </div>
       )}
 
@@ -427,94 +428,6 @@ export function Ventas() {
 }
 
 /** El detalle de la factura: qué llevó el cliente y a qué precio. */
-function DetalleFactura({ factura, onClose }: { factura: FacturaFila | null; onClose: () => void }) {
-  const items = useQuery({
-    queryKey: ['factura-items', factura?.id],
-    enabled: !!factura,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('invoice_items')
-        .select('id, line_no, sku, description, variant, quantity, unit_price_net, net_total, gross_total')
-        .eq('invoice_id', factura!.id)
-        .order('line_no')
-      if (error) throw error
-      return data as {
-        id: string; line_no: number; sku: string | null; description: string
-        variant: string | null; quantity: number; unit_price_net: number
-        net_total: number; gross_total: number
-      }[]
-    },
-  })
-
-  return (
-    <Modal open={!!factura} onClose={onClose} wide
-      title={factura ? `${DOC_LABEL[factura.doc_type] ?? ''} ${factura.doc_number}` : ''}>
-      {factura && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Campo k="Cliente" v={factura.customers?.name ?? '—'} />
-            <Campo k="Emitida" v={dateShort(factura.issued_at)} />
-            <Campo k="Vence" v={dateShort(factura.due_date)} />
-            <Campo k="Saldo" v={money(Number(factura.total) - Number(factura.amount_paid))} />
-          </div>
-
-          {items.isLoading && <Skeleton className="h-32" />}
-          {items.data && (
-            <div className="overflow-hidden rounded-lg border border-slate-200">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Producto</th>
-                    <th className="px-3 py-2 text-right">Cantidad</th>
-                    <th className="px-3 py-2 text-right">Precio neto</th>
-                    <th className="px-3 py-2 text-right">Neto</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {items.data.map((i) => (
-                    <tr key={i.id}>
-                      <td className="px-3 py-2">
-                        {i.description}
-                        {i.variant && <span className="ml-1 text-xs text-slate-400">{i.variant}</span>}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{Number(i.quantity)} kg</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-500">{money(i.unit_price_net)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-medium">{money(i.net_total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-slate-50 text-sm">
-                  <tr>
-                    <td className="px-3 py-2 text-right text-slate-500" colSpan={3}>Neto</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{money(factura.net_amount)}</td>
-                  </tr>
-                  <tr>
-                    <td className="px-3 py-2 text-right text-slate-500" colSpan={3}>IVA</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{money(factura.tax_amount)}</td>
-                  </tr>
-                  <tr>
-                    <td className="px-3 py-2 text-right font-medium" colSpan={3}>Total</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{money(factura.total)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-    </Modal>
-  )
-}
-
-function Campo({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="rounded-lg bg-slate-50 px-3 py-2">
-      <p className="text-[11px] tracking-wide text-slate-500 uppercase">{k}</p>
-      <p className="mt-0.5 font-medium text-slate-900">{v}</p>
-    </div>
-  )
-}
-
 function CobroModal({
   orden, onClose, onGuardar, pendiente, error,
 }: {

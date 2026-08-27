@@ -70,6 +70,18 @@
   .td { @apply px-4 py-3 text-sm text-slate-700; }
 }
 
+/*
+ * Leaflet reparte z-index entre 400 y 1000 a sus capas y controles, muy por
+ * encima del z-50 de los modales, así que el mapa se dibujaba encima del
+ * formulario de contactos y no se podía escribir en él. Con position:relative
+ * y z-index:0 el contenedor abre su propio contexto de apilamiento y todos
+ * esos valores quedan encerrados dentro del mapa.
+ */
+.leaflet-container {
+  position: relative;
+  z-index: 0;
+}
+
 /* Scrollbar discreto en escritorio */
 @media (min-width: 768px) {
   ::-webkit-scrollbar { width: 10px; height: 10px; }
