@@ -10,7 +10,11 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' + registro desde la aplicación: con 'autoUpdate' el service
+      // worker nuevo tomaba control, pero la pestaña abierta seguía corriendo
+      // el JavaScript viejo hasta que alguien recargara a mano.
+      registerType: 'prompt',
+      injectRegister: null,
       includeAssets: ['favicon.svg', 'logo.svg', 'apple-touch-icon.png', 'icon-maskable-512.png'],
       manifest: {
         // `id` fija la identidad de la aplicación instalada: sin él, cambiar

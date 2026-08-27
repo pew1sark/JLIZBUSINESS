@@ -7,6 +7,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminLayout } from './components/layout/AdminLayout'
 import { WorkerLayout } from './components/layout/WorkerLayout'
 import { Login } from './pages/Login'
+import { NuevaVersion } from './components/NuevaVersion'
 const Dashboard = lazy(() => import('./pages/admin/Dashboard').then((m) => ({ default: m.Dashboard })))
 const Entregas = lazy(() => import('./pages/admin/Entregas').then((m) => ({ default: m.Entregas })))
 const Reportes = lazy(() => import('./pages/admin/Reportes').then((m) => ({ default: m.Reportes })))
@@ -119,6 +120,7 @@ export default function App() {
           </Suspense>
         </AuthProvider>
       </HashRouter>
+      <NuevaVersion />
     </QueryClientProvider>
   )
 }
