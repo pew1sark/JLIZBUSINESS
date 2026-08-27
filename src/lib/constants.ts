@@ -58,6 +58,7 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   cheque: 'Cheque',
   credito: 'Crédito',
   otro: 'Otro',
+  nota_credito: 'Nota de crédito',
 }
 
 export const PURCHASE_STATUS_LABEL: Record<PurchaseStatus, string> = {

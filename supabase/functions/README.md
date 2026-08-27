@@ -8,6 +8,7 @@ vive en el proyecto Supabase; acá queda la referencia de qué hace cada una.
 | `bsale-connect` | sí (admin) | Recibe el access token, **lo prueba contra `GET /v1/users.json?limit=1`** y solo si Bsale responde bien lo guarda cifrado en Vault y crea la conexión. El token nunca vuelve al navegador. |
 | `bsale-sync` | sí (admin) | Trae el libro de compras (`third_party_documents`, por año/mes), las recepciones (`stocks/receptions`) y sus detalles con costo. Va a ~8 req/s, reintenta con espera creciente ante 429/5xx, corta por número de páginas y guarda un cursor para retomar. |
 | `bsale-cron` | **no** | La que dispara `pg_cron` cada 30 min. Corre la cadena completa sobre el mes en curso y el anterior: **compras** (libro de compras → XML del DTE → `purchases` → costos) y **ventas** (`/documents.json` → `bsale_sales_documents` → `invoices`). Exige `x-cron-secret` contra el secreto de Vault; sin ese encabezado no hace nada. Acepta `{"solo":"ventas"}` y `{"desde":"YYYY-MM-DD","hasta":"..."}` para forzar una ventana concreta. |
+| `bsale-notas-credito` | **no** | Lee el XML del DTE de cada nota de crédito para sacar a qué factura apunta: la API devuelve `references: {count: 0}` en todas, así que por ahí no viene. Del bloque `<Referencia>` toma `FolioRef` (la factura), `CodRef` (1 anula, 2 corrige texto, 3 corrige montos) y `RazonRef`. Después llama a `aplicar_notas_credito()`. La dispara `pg_cron` a los 15 y 45, desfasada de la sincronización. Acepta `{"rehacer": true}` para releer los XML ya procesados. |
 | `bsale-webhook` | **no** | Recibe los avisos de Bsale. Como la API no documenta firma, exige `?key=<BSALE_WEBHOOK_SECRET>` y trata el payload como no confiable: solo registra qué recurso releer. |
 
 ## Secretos que hay que configurar en Supabase
@@ -40,6 +41,7 @@ la sesión: *Configuración → Conexión con Bsale*.
 |---|---|---|---|
 | Compras | `third_party_documents` (libro de compras del SII) + XML del DTE | `suppliers`, `purchases`, `purchase_items` | 30 min |
 | Ventas | `documents.json` (documentos emitidos) | `customers`, `invoices`, `invoice_items` | 30 min |
+| Notas de crédito | XML del DTE (`<Referencia>`) | `invoices.related_doc_number` + imputación | 30 min (a los 15 y 45) |
 
 Ambas corren sobre el mes en curso y el anterior. El histórico anterior a esa
 ventana se carga una vez a mano y no se vuelve a tocar.

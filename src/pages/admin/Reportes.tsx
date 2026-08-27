@@ -166,6 +166,7 @@ const REPORTES: Reporte[] = [
         'Fecha de pago', 'Cobro', 'Cliente', 'RUT', 'Documento', 'Emitido', 'Vence',
         'Total del documento', 'Monto imputado', 'Monto del cobro', 'Forma de pago',
         'N° de operación', 'Días desde la emisión', 'Días vs. vencimiento', 'Destino', 'Nota',
+        '¿Es nota de crédito?',
       ]]
       for (const d of data as {
         fecha_pago: string; pago_code: string; cliente: string; rut: string | null
@@ -173,12 +174,13 @@ const REPORTES: Reporte[] = [
         total_documento: number | null; monto_imputado: number | null; monto_pago: number
         metodo: string; reference: string | null; dias_desde_emision: number | null
         dias_vs_vencimiento: number | null; destino: string; notes: string | null
+        es_nota_credito: boolean
       }[]) {
         filas.push([
           d.fecha_pago, d.pago_code, d.cliente, d.rut, d.documento,
           d.emitido, d.vence, d.total_documento, d.monto_imputado, d.monto_pago,
           d.metodo, d.reference, d.dias_desde_emision, d.dias_vs_vencimiento,
-          d.destino, d.notes,
+          d.destino, d.notes, d.es_nota_credito ? 'sí' : 'no',
         ])
       }
       return filas

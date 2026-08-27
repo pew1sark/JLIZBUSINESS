@@ -1116,8 +1116,14 @@ function InformeFechasPago() {
     (d) => !q || d.cliente.toLowerCase().includes(q) || (d.documento ?? '').toLowerCase().includes(q),
   )
 
-  const total = filas.reduce((a, d) => a + Number(d.monto_imputado ?? 0), 0)
-  const conPlazo = filas.filter((d) => d.dias_desde_emision !== null)
+  // Las notas de crédito cierran facturas pero no son plata que entró, y como se
+  // aplican el mismo día de la factura, promediarlas hacía parecer que los
+  // clientes pagaban más rápido de lo que pagan. Se muestran, pero aparte.
+  const plata = filas.filter((d) => !d.es_nota_credito)
+  const notas = filas.filter((d) => d.es_nota_credito)
+  const total = plata.reduce((a, d) => a + Number(d.monto_imputado ?? 0), 0)
+  const totalNotas = notas.reduce((a, d) => a + Number(d.monto_imputado ?? 0), 0)
+  const conPlazo = plata.filter((d) => d.dias_desde_emision !== null)
   const promedio = conPlazo.length
     ? Math.round(conPlazo.reduce((a, d) => a + (d.dias_desde_emision ?? 0), 0) / conPlazo.length)
     : null
@@ -1127,6 +1133,7 @@ function InformeFechasPago() {
       'Fecha de pago', 'Cobro', 'Cliente', 'RUT', 'Documento', 'Emitido', 'Vence',
       'Total del documento', 'Monto imputado', 'Monto del cobro', 'Forma de pago',
       'N° de operación', 'Días desde la emisión', 'Días vs. vencimiento', 'Nota',
+      '¿Es nota de crédito?',
     ]]
     for (const d of filas) {
       f.push([
@@ -1134,6 +1141,7 @@ function InformeFechasPago() {
         d.emitido ?? '', d.vence ?? '', d.total_documento ?? '', d.monto_imputado ?? '',
         d.monto_pago, d.metodo, d.reference ?? '',
         d.dias_desde_emision ?? '', d.dias_vs_vencimiento ?? '', d.notes ?? '',
+        d.es_nota_credito ? 'sí' : 'no',
       ])
     }
     descargarCsv(f, `fechas-de-pago-${mes || 'todo'}`)
@@ -1176,8 +1184,13 @@ function InformeFechasPago() {
             </div>
 
             <span className="text-xs text-slate-500">
-              {filas.length} imputación(es) · {money(total)}
+              {plata.length} cobro(s) · {money(total)}
               {promedio !== null && ` · ${promedio} días promedio desde la emisión`}
+              {notas.length > 0 && (
+                <span className="block text-slate-400">
+                  + {notas.length} nota(s) de crédito por {money(totalNotas)}, fuera del promedio
+                </span>
+              )}
             </span>
 
             <button className="btn-secondary px-3 py-1.5 text-xs" onClick={exportar}
@@ -1211,7 +1224,8 @@ function InformeFechasPago() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filas.map((d, i) => (
-                    <tr key={`${d.payment_id}-${d.documento ?? i}`} className="hover:bg-slate-50">
+                    <tr key={`${d.payment_id}-${d.documento ?? i}`}
+                      className={clsx('hover:bg-slate-50', d.es_nota_credito && 'bg-slate-50/70')}>
                       <td className="td">
                         <p className="font-medium text-navy-900">{dateShort(d.fecha_pago)}</p>
                         <p className="text-xs text-slate-400">{d.pago_code}</p>
@@ -1226,7 +1240,8 @@ function InformeFechasPago() {
                         {d.monto_imputado === null ? money(d.monto_pago) : money(d.monto_imputado)}
                       </td>
                       <td className="td text-right tabular-nums">
-                        {d.dias_desde_emision === null ? <span className="text-slate-300">—</span> : (
+                        {d.es_nota_credito ? <span className="text-slate-300">—</span>
+                        : d.dias_desde_emision === null ? <span className="text-slate-300">—</span> : (
                           <span title={d.dias_vs_vencimiento === null ? undefined
                             : d.dias_vs_vencimiento > 0
                               ? `${d.dias_vs_vencimiento} días después del vencimiento`
@@ -1238,7 +1253,9 @@ function InformeFechasPago() {
                         )}
                       </td>
                       <td className="td text-xs text-slate-500">
-                        {PAYMENT_METHOD_LABEL[d.metodo as PaymentMethod] ?? d.metodo}
+                        <span className={clsx(d.es_nota_credito && 'font-medium text-emerald-700')}>
+                          {PAYMENT_METHOD_LABEL[d.metodo as PaymentMethod] ?? d.metodo}
+                        </span>
                         {d.reference && <span className="block text-slate-400">ref {d.reference}</span>}
                       </td>
                     </tr>

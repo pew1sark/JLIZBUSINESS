@@ -29,6 +29,7 @@ interface Kpis {
   vencido: number
   por_pagar: number
   cobrado_mes: number
+  notas_credito_mes: number
   pagado_mes: number
 }
 
@@ -281,7 +282,11 @@ export function Finanzas() {
             Del mes en curso · los dos últimos siguen el filtro
           </p>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-            <StatCard label="Venta del mes" value={moneyShort(k.venta_mes)} icon={<TrendingUp className="h-4 w-4" />} />
+            <StatCard label="Venta del mes" value={moneyShort(k.venta_mes)}
+              hint={k.notas_credito_mes > 0
+                ? `ya descontados ${moneyShort(k.notas_credito_mes)} en notas de crédito`
+                : undefined}
+              icon={<TrendingUp className="h-4 w-4" />} />
             <StatCard
               label="Margen bruto"
               value={sinCosto ? '—' : pct(k.margen_bruto_pct)}

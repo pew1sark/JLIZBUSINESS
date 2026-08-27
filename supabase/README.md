@@ -30,6 +30,8 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 | `corte_de_analisis` (+ `_kpis_y_costos`, `_en_kpis`) | `settings.analisis.desde` + `analisis_desde()`: fecha de corte que respetan todas las vistas y KPIs. Lo anterior queda guardado pero fuera de los números. Evita comparar compras de 2025 contra ventas que aún no se cargan. |
 | `secreto_de_automatizacion` + `cron_bsale_cada_30_min` + `permitir_service_role_en_importacion` | `pg_cron` cada 30 min llama a la Edge Function `bsale-cron` vía `pg_net`, con el secreto guardado en Vault. `puede_importar()` reconoce a `service_role`, que no tiene `auth.uid()`. |
 
+| `notas_credito` (varias, de `notas_credito_referencia_y_aplicacion` a `cron_aplica_notas_credito`) | **Notas de crédito que no estorban.** La API de Bsale devuelve `references` vacío en las notas, así que el vínculo con la factura se lee del `<Referencia>` del XML del DTE (`FolioRef` + `CodRef`). `aplicar_notas_credito()` descuenta hasta el saldo vivo y lo que sobra queda a favor del cliente. Se agrega el método de pago `nota_credito`: la nota salda la factura pero **no es plata que entró**, así que sale de `cobrado_mes`, de `v_meses_actividad.cobrado`, del `ultimo_pago` del cliente y de los promedios de días de pago —antes una factura anulada figuraba pagada en cero días y bajaba el promedio de todos. `v_facturas_con_pago` suma `nota_credito_aplicada`, `saldada_con_nota` y `notas_credito`. `pg_cron` a los 15 y 45 resuelve y aplica las nuevas. |
+
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 
 ## Sincronizar los archivos locales con la base

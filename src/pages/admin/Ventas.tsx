@@ -117,11 +117,20 @@ export function Ventas() {
 
   const totalesFactura = useMemo(() => {
     const f = facturasFiltradas
+    const docs = f.filter((x) => x.doc_type !== 'nota_credito')
+    const notas = f.filter((x) => x.doc_type === 'nota_credito')
+    // Neto, IVA y total ya vienen rebajados: la nota entra con signo negativo.
     const neto = f.reduce((n, x) => n + Number(x.net_amount), 0)
     const ivaMonto = f.reduce((n, x) => n + Number(x.tax_amount), 0)
     const bruto = f.reduce((n, x) => n + Number(x.total), 0)
-    const cobrado = f.reduce((n, x) => n + Number(x.amount_paid), 0)
-    return { neto, ivaMonto, bruto, cobrado, pendiente: bruto - cobrado }
+    // La nota guarda amount_paid positivo contra un total negativo. Sumarla
+    // aquí daba el doble de cobrado y un pendiente negativo, así que se cuenta
+    // solo lo saldado de los documentos de venta.
+    const cobrado = docs.reduce((n, x) => n + Number(x.amount_paid), 0)
+    const anulado = notas.reduce((n, x) => n + Math.abs(Number(x.total)), 0)
+    const pendiente = docs.reduce(
+      (n, x) => n + Math.max(Number(x.total) - Number(x.amount_paid), 0), 0)
+    return { neto, ivaMonto, bruto, cobrado, anulado, pendiente, notas: notas.length }
   }, [facturasFiltradas])
 
   const iva = Number(operacion.data?.iva ?? 19)
@@ -240,6 +249,10 @@ export function Ventas() {
           <StatCard label="Cobrado" value={money(totalesFactura.cobrado)} />
           <StatCard label="Por cobrar" value={money(totalesFactura.pendiente)}
             tone={totalesFactura.pendiente > 0 ? 'warning' : 'default'} />
+          {totalesFactura.anulado > 0 && (
+            <StatCard label="Anulado con notas" value={money(totalesFactura.anulado)}
+              hint={`${totalesFactura.notas} nota(s) de crédito, ya descontadas de la venta`} />
+          )}
         </div>
       ) : (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">

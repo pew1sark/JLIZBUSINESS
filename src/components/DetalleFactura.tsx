@@ -49,6 +49,7 @@ export function DetalleFactura({
         primer_pago: string | null; ultimo_pago: string | null; n_pagos: number
         metodos: string | null; referencias: string | null
         dias_en_pagar: number | null; dias_esperando: number | null; dias_atraso: number | null
+        nota_credito_aplicada: number; saldada_con_nota: boolean; notas_credito: string | null
       } | null
     },
   })
@@ -106,7 +107,18 @@ export function DetalleFactura({
                     )}
                     {d.metodos && <span className="text-slate-400">{d.metodos}</span>}
                     {d.referencias && <span className="text-slate-400">ref {d.referencias}</span>}
+                    {d.nota_credito_aplicada > 0 && (
+                      <span className="text-emerald-700">
+                        + {money(d.nota_credito_aplicada)} anulados con {d.notas_credito ?? 'nota de crédito'}
+                      </span>
+                    )}
                   </>
+                ) : d.saldada_con_nota ? (
+                  <span className="text-slate-600">
+                    Anulada con {d.notas_credito ?? 'nota de crédito'} por{' '}
+                    <span className="font-medium text-slate-800">{money(d.nota_credito_aplicada)}</span>
+                    <span className="ml-1 text-slate-400">· no entró plata</span>
+                  </span>
                 ) : (
                   <span className="text-slate-500">
                     Sin pagos registrados

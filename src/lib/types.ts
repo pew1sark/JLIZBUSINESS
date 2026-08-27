@@ -8,7 +8,10 @@ export type UnitMeasure = 'kg' | 'g' | 'unidad' | 'caja' | 'bandeja'
 export type OrderStatus =
   | 'nuevo' | 'confirmado' | 'en_preparacion' | 'preparado' | 'en_reparto' | 'entregado' | 'cancelado'
 export type PaymentStatus = 'pendiente' | 'parcial' | 'pagado' | 'vencido'
-export type PaymentMethod = 'efectivo' | 'transferencia' | 'tarjeta' | 'cheque' | 'credito' | 'otro'
+export type PaymentMethod =
+  | 'efectivo' | 'transferencia' | 'tarjeta' | 'cheque' | 'credito' | 'otro'
+  /** Saldo por nota de crédito: cierra la factura, pero no es plata que entró. */
+  | 'nota_credito'
 export type PurchaseStatus = 'borrador' | 'recibida' | 'anulada'
 export type LotStatus = 'disponible' | 'agotado' | 'vencido' | 'bloqueado'
 export type DeliveryStatus = 'pendiente' | 'asignada' | 'en_camino' | 'entregada' | 'fallida'
@@ -452,6 +455,8 @@ export interface PagoDetalle {
   total_documento: number | null
   dias_desde_emision: number | null
   dias_vs_vencimiento: number | null
+  /** La factura se saldó con una nota de crédito, no con un pago. */
+  es_nota_credito: boolean
 }
 
 /** Cuánto se demora un cliente en pagar, y con cuánta regularidad. */
