@@ -432,6 +432,14 @@ export interface FacturaConPago {
   dias_vs_plazo: number | null
   dias_esperando: number | null
   dias_atraso: number | null
+  /** Cuánto de esta factura se anuló con notas de crédito, y con cuáles. */
+  nota_credito_aplicada: number
+  saldada_con_nota: boolean
+  notas_credito: string | null
+  /** El estado se puso a mano y le gana al cálculo por imputaciones. */
+  estado_corregido: boolean
+  estado_forzado_motivo: string | null
+  estado_forzado_at: string | null
 }
 
 /** Una línea del informe de fechas de pago: este día entró plata y cubrió este documento. */

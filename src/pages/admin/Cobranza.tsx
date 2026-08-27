@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, ArrowRightLeft, CalendarClock, Check, Download, Inbox, Link2, MessageCircle,
-  RotateCcw, Search, Timer, Trash2, Wallet, X,
+  Pencil, RotateCcw, Search, Timer, Trash2, Wallet, X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
@@ -18,6 +18,7 @@ import { ordenar, useOrden } from '../../lib/orden'
 import { nombreMes, rangoDe, type Periodo } from '../../lib/periodo'
 import { ReporteCobro } from '../../components/ReporteCobro'
 import { DetalleFactura, type FacturaRef } from '../../components/DetalleFactura'
+import { CorregirFactura } from '../../components/CorregirFactura'
 import {
   Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap,
 } from '../../components/ui'
@@ -1787,10 +1788,13 @@ function Dato({ label, valor, tono }: { label: string; valor: string; tono?: 'bu
 // no se maneja con una lista plana.
 
 type Orden = 'emision' | 'vencimiento' | 'monto'
-type Filtro = 'todas' | 'vencidas' | 'graves' | 'por_vencer' | 'abonadas' | 'pagadas'
+type Filtro = 'todo' | 'todas' | 'vencidas' | 'graves' | 'por_vencer' | 'abonadas' | 'pagadas'
 
-
+// 'todo' es el historial completo del cliente —pagadas y no pagadas juntas—,
+// que es como se revisa cuando hay que corroborar qué pasó con una factura.
+// 'todas' es todo lo que sigue debiendo, que es lo que se necesita al cobrar.
 const FILTRO_LABEL: Record<Filtro, string> = {
+  todo: 'Todas',
   todas: 'Por cobrar',
   vencidas: 'Vencidas',
   graves: '+30 días',
@@ -1875,7 +1879,7 @@ function useFiltroFacturas(documentos: CuentaPorCobrar[], historial: FacturaConP
       .sort((a, b) => (b.ultimo_pago ?? '').localeCompare(a.ultimo_pago ?? ''))
   }, [pagadas, buscar, mes])
 
-  const acotado = filtro !== 'todas' || !!mes || !!buscar.trim()
+  const acotado = (filtro !== 'todas' && filtro !== 'todo') || !!mes || !!buscar.trim()
 
   return {
     orden, setOrden, filtro, setFiltro, buscar, setBuscar, mes, setMes,
@@ -1888,13 +1892,15 @@ function useFiltroFacturas(documentos: CuentaPorCobrar[], historial: FacturaConP
 type FiltroFacturas = ReturnType<typeof useFiltroFacturas>
 
 function SelectorFacturas({
-  f, cargando, reparto, setReparto, disponible,
+  f, cargando, reparto, setReparto, disponible, onCorregir,
 }: {
   f: FiltroFacturas
   cargando: boolean
   reparto: Record<string, string>
   setReparto: (r: (x: Record<string, string>) => Record<string, string>) => void
   disponible: number
+  /** Abre la corrección de una factura, pagada o no. */
+  onCorregir: (invoiceId: string) => void
 }) {
   const {
     orden, setOrden, filtro, setFiltro, buscar, setBuscar, mes, setMes,
@@ -1947,7 +1953,9 @@ function SelectorFacturas({
 
         <div className="flex flex-wrap items-center gap-1">
           {(Object.keys(FILTRO_LABEL) as Filtro[]).map((f) => {
-            const n = f === 'pagadas' ? pagadas.length : documentos.filter((d) =>
+            const n = f === 'pagadas' ? pagadas.length
+              : f === 'todo' ? documentos.length + pagadas.length
+              : documentos.filter((d) =>
               f === 'vencidas' ? d.dias_atraso > 0
               : f === 'graves' ? d.dias_atraso > 30
               : f === 'por_vencer' ? d.dias_atraso === 0
@@ -1967,7 +1975,7 @@ function SelectorFacturas({
         {filtro === 'pagadas' ? (
           <p className="text-xs text-slate-500">
             {pagadasVisibles.length} factura(s) ya pagada(s){mes && ` en ${nombreMes(mes)}`}.
-            Se muestran solo para consultar la fecha de pago; no se les puede imputar nada.
+            No se les puede imputar un cobro nuevo, pero sí corregir lo que tienen encima.
           </p>
         ) : (
           <div className="flex flex-wrap items-center gap-3 text-xs">
@@ -2000,23 +2008,13 @@ function SelectorFacturas({
           </p>
         )}
 
-        {filtro === 'pagadas' && pagadasVisibles.map((h) => (
-          <div key={h.invoice_id}
-            className="flex items-center gap-3 border-b border-slate-50 px-4 py-2.5 opacity-90">
-            <Check className="h-4 w-4 shrink-0 text-emerald-500" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-slate-800">{h.doc_number}</p>
-              <p className="text-xs text-slate-400">
-                Emitida {dateShort(h.issued_at)} · pagada {dateShort(h.ultimo_pago)}
-                {h.dias_en_pagar !== null && ` · ${h.dias_en_pagar} días`}
-                {h.n_pagos > 1 && ` · ${h.n_pagos} pagos`}
-              </p>
-            </div>
-            <p className="shrink-0 text-sm tabular-nums text-slate-500">{money(h.total)}</p>
-          </div>
-        ))}
+        {!cargando && filtro === 'todo' && visibles.length === 0 && pagadasVisibles.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-slate-400">
+            Este cliente no tiene documentos{mes && ` en ${nombreMes(mes)}`}
+          </p>
+        )}
 
-        {!cargando && filtro !== 'pagadas' && visibles.length === 0 && (
+        {!cargando && filtro !== 'pagadas' && filtro !== 'todo' && visibles.length === 0 && (
           <p className="px-4 py-6 text-center text-sm text-slate-400">
             {documentos.length === 0
               ? 'Este cliente no tiene documentos pendientes'
@@ -2066,9 +2064,50 @@ function SelectorFacturas({
                 onClick={(e) => e.preventDefault()}
                 value={reparto[key] ?? ''}
                 onChange={(e) => setReparto((r) => ({ ...r, [key]: e.target.value }))} />
+
+              {d.invoice_id && (
+                <button type="button" title="Corregir esta factura"
+                  className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-navy-700"
+                  onClick={(e) => { e.preventDefault(); onCorregir(d.invoice_id!) }}>
+                  <Pencil className="h-4 w-4" />
+                </button>
+              )}
             </label>
           )
         })}
+
+        {filtro === 'todo' && visibles.length > 0 && pagadasVisibles.length > 0 && (
+          <p className="border-b border-slate-100 bg-slate-50 px-4 py-1.5 text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+            Ya pagadas
+          </p>
+        )}
+
+        {(filtro === 'pagadas' || filtro === 'todo') && pagadasVisibles.map((h) => (
+          <div key={h.invoice_id}
+            className="flex items-center gap-3 border-b border-slate-50 px-4 py-2.5">
+            <Check className="h-4 w-4 shrink-0 text-emerald-500" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-slate-800">{h.doc_number}</p>
+              <p className="text-xs text-slate-400">
+                Emitida {dateShort(h.issued_at)}
+                {h.ultimo_pago
+                  ? <> · pagada {dateShort(h.ultimo_pago)}
+                      {h.dias_en_pagar !== null && ` · ${h.dias_en_pagar} días`}
+                      {h.n_pagos > 1 && ` · ${h.n_pagos} pagos`}</>
+                  : h.saldada_con_nota
+                    ? <> · anulada con {h.notas_credito ?? 'nota de crédito'}</>
+                    : <> · sin cobros registrados</>}
+                {h.estado_corregido && <span className="text-amber-600"> · estado puesto a mano</span>}
+              </p>
+            </div>
+            <p className="shrink-0 text-sm tabular-nums text-slate-500">{money(h.total)}</p>
+            <button type="button" title="Corregir esta factura"
+              className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-navy-700"
+              onClick={() => onCorregir(h.invoice_id)}>
+              <Pencil className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -2284,6 +2323,7 @@ function ModalCobrar({
   const [notas, setNotas] = useState('')
   const [reparto, setReparto] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
+  const [corrigiendo, setCorrigiendo] = useState<string | null>(null)
 
   const cliente = clientes.find((c) => c.customer_id === customerId)
 
@@ -2421,7 +2461,7 @@ function ModalCobrar({
             <ResumenPagoCliente customerId={customerId} />
             <SelectorFacturas f={filtro} cargando={docs.isLoading}
               reparto={reparto} setReparto={setReparto}
-              disponible={montoNum} />
+              disponible={montoNum} onCorregir={setCorrigiendo} />
           </>
         )}
 
@@ -2443,6 +2483,9 @@ function ModalCobrar({
           </p>
         )}
       </div>
+
+      <CorregirFactura invoiceId={corrigiendo} onClose={() => setCorrigiendo(null)}
+        onGuardado={onHecho} />
     </Modal>
   )
 }
@@ -2457,6 +2500,7 @@ function ModalImputar({
 }) {
   const [reparto, setReparto] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
+  const [corrigiendo, setCorrigiendo] = useState<string | null>(null)
 
   const cliente = useQuery({
     queryKey: ['estado-cuenta', pago.customer_id],
@@ -2536,7 +2580,7 @@ function ModalImputar({
 
         <SelectorFacturas f={filtro} cargando={docs.isLoading}
           reparto={reparto} setReparto={setReparto}
-          disponible={Number(pago.amount)} />
+          disponible={Number(pago.amount)} onCorregir={setCorrigiendo} />
 
         {resto < -0.5 && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -2544,6 +2588,9 @@ function ModalImputar({
           </p>
         )}
       </div>
+
+      <CorregirFactura invoiceId={corrigiendo} onClose={() => setCorrigiendo(null)}
+        onGuardado={onHecho} />
     </Modal>
   )
 }

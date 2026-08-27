@@ -32,6 +32,8 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 
 | `notas_credito` (varias, de `notas_credito_referencia_y_aplicacion` a `cron_aplica_notas_credito`) | **Notas de crédito que no estorban.** La API de Bsale devuelve `references` vacío en las notas, así que el vínculo con la factura se lee del `<Referencia>` del XML del DTE (`FolioRef` + `CodRef`). `aplicar_notas_credito()` descuenta hasta el saldo vivo y lo que sobra queda a favor del cliente. Se agrega el método de pago `nota_credito`: la nota salda la factura pero **no es plata que entró**, así que sale de `cobrado_mes`, de `v_meses_actividad.cobrado`, del `ultimo_pago` del cliente y de los promedios de días de pago —antes una factura anulada figuraba pagada en cero días y bajaba el promedio de todos. `v_facturas_con_pago` suma `nota_credito_aplicada`, `saldada_con_nota` y `notas_credito`. `pg_cron` a los 15 y 45 resuelve y aplica las nuevas. |
 
+| `corregir_factura` | **Corregir una factura a mano.** El estado sale de las imputaciones, que es lo correcto casi siempre; cuando no lo es, antes la única salida era `void_payment`, que borra el pago entero y se lleva por delante las otras facturas que cubría. `corregir_imputacion()` toca solo el vínculo pago↔factura (bajarlo, subirlo o quitarlo) y lo liberado vuelve a quedar disponible. `corregir_estado_factura()` fuerza el estado como último recurso: exige motivo, queda en `audit_logs` y `recalc_receivable` lo respeta, así que la sincronización con Bsale ya no lo pisa. Pasar el estado en null devuelve la factura al cálculo automático. Se agrega `v_imputaciones_factura`. |
+
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 
 ## Sincronizar los archivos locales con la base

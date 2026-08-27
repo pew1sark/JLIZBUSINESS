@@ -138,7 +138,7 @@ export function ErrorState({ error }: { error: unknown }) {
 }
 
 export function Modal({
-  open, onClose, title, children, footer, wide,
+  open, onClose, title, children, footer, wide, sobrepuesto,
 }: {
   open: boolean
   onClose: () => void
@@ -146,11 +146,15 @@ export function Modal({
   children: ReactNode
   footer?: ReactNode
   wide?: boolean
+  /** Para abrirlo encima de otro modal (corregir una factura desde el cobro). */
+  sobrepuesto?: boolean
 }) {
   if (!open) return null
   return (
     // z-[1100] deja el modal por sobre cualquier capa de Leaflet, que llega a 1000.
-    <div className="fixed inset-0 z-[1100] flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4">
+    <div className={clsx(
+      'fixed inset-0 flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4',
+      sobrepuesto ? 'z-[1150]' : 'z-[1100]')}>
       <div
         className={clsx(
           'flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl',

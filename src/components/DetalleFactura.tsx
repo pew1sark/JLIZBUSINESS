@@ -1,9 +1,12 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Pencil } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { dateShort, money } from '../lib/format'
 import { PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE } from '../lib/constants'
 import type { PaymentStatus } from '../lib/types'
 import { Modal, Skeleton } from './ui'
+import { CorregirFactura } from './CorregirFactura'
 
 const DOC_LABEL: Record<string, string> = {
   factura: 'Factura', boleta: 'Boleta',
@@ -50,6 +53,7 @@ export function DetalleFactura({
         metodos: string | null; referencias: string | null
         dias_en_pagar: number | null; dias_esperando: number | null; dias_atraso: number | null
         nota_credito_aplicada: number; saldada_con_nota: boolean; notas_credito: string | null
+        estado_corregido: boolean; estado_forzado_motivo: string | null
       } | null
     },
   })
@@ -73,6 +77,7 @@ export function DetalleFactura({
   })
 
   const d = doc.data
+  const [corrigiendo, setCorrigiendo] = useState(false)
 
   return (
     <Modal open={!!factura} onClose={onClose} wide
@@ -96,6 +101,11 @@ export function DetalleFactura({
                 <span className={`badge ${PAYMENT_STATUS_STYLE[d.payment_status]}`}>
                   {PAYMENT_STATUS_LABEL[d.payment_status]}
                 </span>
+                {d.estado_corregido && (
+                  <span className="text-amber-700">
+                    estado puesto a mano: {d.estado_forzado_motivo}
+                  </span>
+                )}
                 {d.ultimo_pago ? (
                   <>
                     <span className="text-slate-600">
@@ -191,8 +201,18 @@ export function DetalleFactura({
               </table>
             </div>
           )}
+
+          {/* Solo las facturas propias se corrigen: un pedido o un saldo
+              inicial no tienen imputaciones que revisar por acá. */}
+          <button type="button" className="btn-secondary w-full sm:w-auto"
+            onClick={() => setCorrigiendo(true)}>
+            <Pencil className="h-4 w-4" /> Corregir el estado o los cobros
+          </button>
         </div>
       )}
+
+      <CorregirFactura invoiceId={corrigiendo ? (factura?.id ?? null) : null}
+        onClose={() => setCorrigiendo(false)} />
     </Modal>
   )
 }
