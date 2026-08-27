@@ -185,6 +185,25 @@ export function Finanzas() {
     return { neto, iva, bruto, otros: bruto - iva - neto }
   }, [pagarFiltrado])
 
+  const totalesCobrar = useMemo(() => {
+    const c = cobrarFiltrado
+    const venc = c.filter((x) => x.dias_atraso > 0)
+    return {
+      documentos: c.length,
+      clientes: new Set(c.map((x) => x.customer_id)).size,
+      facturado: c.reduce((a, x) => a + Number(x.total), 0),
+      cobrado: c.reduce((a, x) => a + Number(x.amount_paid), 0),
+      saldo: c.reduce((a, x) => a + Number(x.saldo), 0),
+      vencido: venc.reduce((a, x) => a + Number(x.saldo), 0),
+      docsVencidos: venc.length,
+      grave: c.filter((x) => x.dias_atraso > 30).reduce((a, x) => a + Number(x.saldo), 0),
+    }
+  }, [cobrarFiltrado])
+
+  // Con un filtro puesto, los saldos de arriba muestran lo filtrado. El resto
+  // de las tarjetas es del mes y no depende del filtro, por eso van separadas.
+  const filtrando = !!buscar.trim() || !!periodo.desde || !!periodo.hasta
+
   // Para el reporte se toma TODA la deuda del cliente, no la filtrada: el
   // mensaje que se le manda tiene que estar completo aunque en pantalla se
   // esté mirando un mes.
@@ -258,6 +277,9 @@ export function Finanzas() {
 
       {k && (
         <>
+          <p className="mb-2 text-xs font-medium tracking-wide text-slate-400 uppercase">
+            Del mes en curso · los dos últimos siguen el filtro
+          </p>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
             <StatCard label="Venta del mes" value={moneyShort(k.venta_mes)} icon={<TrendingUp className="h-4 w-4" />} />
             <StatCard
@@ -275,8 +297,19 @@ export function Finanzas() {
               tone={!margenFiable ? 'default' : enPerdida ? 'danger' : 'positive'}
               icon={enPerdida ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
             />
-            <StatCard label="Por cobrar" value={moneyShort(k.por_cobrar)} hint={`${moneyShort(k.vencido)} vencido`} tone={k.vencido > 0 ? 'danger' : 'default'} />
-            <StatCard label="Por pagar" value={moneyShort(k.por_pagar)} tone={k.por_pagar > 0 ? 'warning' : 'default'} icon={<Wallet className="h-4 w-4" />} />
+            <StatCard
+              label={filtrando ? 'Por cobrar (filtrado)' : 'Por cobrar'}
+              value={money(filtrando ? totalesCobrar.saldo : k.por_cobrar)}
+              hint={filtrando
+                ? `${money(totalesCobrar.vencido)} vencido · total ${moneyShort(k.por_cobrar)}`
+                : `${moneyShort(k.vencido)} vencido`}
+              tone={(filtrando ? totalesCobrar.vencido : k.vencido) > 0 ? 'danger' : 'default'} />
+            <StatCard
+              label={filtrando ? 'Por pagar (filtrado)' : 'Por pagar'}
+              value={money(filtrando ? totalesPagar.bruto : k.por_pagar)}
+              hint={filtrando ? `total ${moneyShort(k.por_pagar)}` : 'con IVA incluido'}
+              tone={(filtrando ? totalesPagar.bruto : k.por_pagar) > 0 ? 'warning' : 'default'}
+              icon={<Wallet className="h-4 w-4" />} />
           </div>
 
           {sinCosto && (
@@ -379,6 +412,23 @@ export function Finanzas() {
           {cobrarFiltrado.length === 0 && !porCobrar.isLoading && (
             <Card><EmptyState title="No hay nada pendiente de cobro" /></Card>
           )}
+
+          {!!cobrarFiltrado.length && (
+            <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatCard label="Facturado" value={money(totalesCobrar.facturado)}
+                hint={`${totalesCobrar.documentos} doc. · ${totalesCobrar.clientes} clientes`} />
+              <StatCard label="Cobrado" value={money(totalesCobrar.cobrado)}
+                hint="abonos ya imputados" />
+              <StatCard label="Por cobrar" value={money(totalesCobrar.saldo)} tone="warning"
+                hint="saldo de lo que se ve en pantalla" />
+              <StatCard label="Vencido" value={money(totalesCobrar.vencido)}
+                tone={totalesCobrar.vencido > 0 ? 'danger' : 'positive'}
+                hint={totalesCobrar.grave > 0
+                  ? `${money(totalesCobrar.grave)} con más de 30 días`
+                  : `${totalesCobrar.docsVencidos} documentos`} />
+            </div>
+          )}
+
           {!!cobrarFiltrado.length && (
             <TableWrap>
               <thead className="bg-slate-50">
@@ -456,13 +506,13 @@ export function Finanzas() {
           {!!pagarFiltrado.length && (
             <>
               <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <StatCard label="Neto de mercadería" value={moneyShort(totalesPagar.neto)}
+                <StatCard label="Neto de mercadería" value={money(totalesPagar.neto)}
                   hint="Es el costo, no lo que se paga" />
-                <StatCard label="Otros conceptos" value={moneyShort(totalesPagar.otros)}
+                <StatCard label="Otros conceptos" value={money(totalesPagar.otros)}
                   hint="Peajes, combustible y servicios de la misma factura" />
-                <StatCard label="IVA" value={moneyShort(totalesPagar.iva)}
+                <StatCard label="IVA" value={money(totalesPagar.iva)}
                   hint="Crédito fiscal del período" />
-                <StatCard label="Total a pagar" value={moneyShort(totalesPagar.bruto)}
+                <StatCard label="Total a pagar" value={money(totalesPagar.bruto)}
                   tone="warning" hint={`${pagarFiltrado.length} documentos`} />
               </div>
 

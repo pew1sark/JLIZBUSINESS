@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertTriangle, ArrowRightLeft, CalendarClock, Check, Clock, Download, Inbox, Link2, MessageCircle,
-  RotateCcw, Search, Timer, Trash2, Users, Wallet, X,
+  AlertTriangle, ArrowRightLeft, CalendarClock, Check, Download, Inbox, Link2, MessageCircle,
+  RotateCcw, Search, Timer, Trash2, Wallet, X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
@@ -145,13 +145,11 @@ export function Cobranza() {
     }
   }
 
-  const resumen = useMemo(() => {
+  /** La cartera completa, sin filtros. Sirve de referencia cuando se filtra. */
+  const carteraTotal = useMemo(() => {
     const cs = clientes.data ?? []
     return {
       deuda: cs.reduce((a, c) => a + Number(c.deuda_total), 0),
-      vencido: cs.reduce((a, c) => a + Number(c.vencido), 0),
-      porVencer: cs.reduce((a, c) => a + Number(c.por_vencer), 0),
-      grave: cs.reduce((a, c) => a + Number(c.atraso_31_60) + Number(c.atraso_60_mas), 0),
       credito: cs.reduce((a, c) => a + Number(c.nota_credito) + Number(c.pago_a_cuenta), 0),
       conDeuda: cs.filter((c) => Number(c.deuda_total) > 0).length,
     }
@@ -250,6 +248,105 @@ export function Cobranza() {
     })[k])
   }, [comportamiento.data, q, filtroComport, ordComport.orden])
 
+  /**
+   * Las tarjetas de arriba muestran lo que hay en pantalla, no la cartera
+   * entera: si se filtra por un mes o por un cliente, los cinco números se
+   * mueven con el filtro. Cada pestaña resume lo suyo, porque no miden lo
+   * mismo — documentos por cobrar, facturas emitidas o clientes.
+   */
+  const resumen = useMemo(() => {
+    const sum = <T,>(xs: T[], v: (x: T) => number) => xs.reduce((a, x) => a + Number(v(x)), 0)
+    const filtrando = !!q || !!periodo.desde || !!periodo.hasta
+
+    if (pestana === 'facturas') {
+      const f = facturasFiltradas
+      const impagas = f.filter((x) => x.payment_status !== 'pagado')
+      return {
+        alcance: 'facturas' as const, filtrando: filtrando || estadoFactura !== 'todas' || !!clienteFactura,
+        cantidad: f.length,
+        tarjetas: [
+          { label: 'Total facturado', valor: sum(f, (x) => x.total), hint: `${f.length} documentos` },
+          { label: 'Cobrado', valor: sum(f, (x) => x.amount_paid),
+            hint: `${f.filter((x) => x.payment_status === 'pagado').length} pagadas` },
+          { label: 'Por cobrar', valor: sum(f, (x) => x.saldo), tono: 'warning' as const,
+            hint: `${impagas.length} sin saldar` },
+          { label: 'Vencido', valor: sum(impagas.filter((x) => (x.dias_atraso ?? 0) > 0), (x) => x.saldo),
+            tono: 'danger' as const,
+            hint: `${impagas.filter((x) => (x.dias_atraso ?? 0) > 0).length} documentos` },
+          { label: 'Días promedio de pago',
+            texto: resumenFacturas.diasPromedio !== null ? `${resumenFacturas.diasPromedio} d` : '—',
+            hint: `${resumenFacturas.pagadas} facturas pagadas` },
+        ],
+      }
+    }
+
+    if (pestana === 'documentos') {
+      const d = documentosFiltrados
+      const venc = d.filter((x) => x.dias_atraso > 0)
+      return {
+        alcance: 'documentos' as const, filtrando, cantidad: d.length,
+        tarjetas: [
+          { label: 'Deuda', valor: sum(d, (x) => x.saldo),
+            hint: `${d.length} documentos · ${new Set(d.map((x) => x.customer_id)).size} clientes` },
+          { label: 'Vencido', valor: sum(venc, (x) => x.saldo), tono: 'danger' as const,
+            hint: `${venc.length} documentos` },
+          { label: 'Más de 30 días',
+            valor: sum(d.filter((x) => x.dias_atraso > 30), (x) => x.saldo), tono: 'danger' as const,
+            hint: 'Riesgo real de incobrable' },
+          { label: 'Por vencer', valor: sum(d.filter((x) => x.dias_atraso === 0), (x) => x.saldo),
+            hint: 'Todavía dentro del plazo' },
+          { label: 'Facturado', valor: sum(d, (x) => x.total), hint: 'Total de los documentos' },
+        ],
+      }
+    }
+
+    if (pestana === 'comportamiento') {
+      const c = comportamientoFiltrado
+      const conDatos = c.filter((x) => x.dias_promedio !== null)
+      const pagadas = sum(conDatos, (x) => x.facturas_pagadas)
+      const prom = pagadas > 0
+        ? Math.round(sum(conDatos, (x) => (x.dias_promedio ?? 0) * x.facturas_pagadas) / pagadas) : null
+      return {
+        alcance: 'comportamiento' as const, filtrando: filtrando || filtroComport !== 'todos',
+        cantidad: c.length,
+        tarjetas: [
+          { label: 'Clientes', texto: String(c.length),
+            hint: `${c.filter((x) => x.facturas_abiertas > 0).length} con deuda abierta` },
+          { label: 'Días promedio de pago', texto: prom !== null ? `${prom} d` : '—',
+            hint: `sobre ${pagadas} facturas pagadas` },
+          { label: 'Se pasan del plazo',
+            texto: String(c.filter((x) => (x.exceso_sobre_plazo ?? 0) > 0).length),
+            tono: 'warning' as const, hint: `de ${conDatos.length} medibles` },
+          { label: 'Saldo abierto', valor: sum(c, (x) => x.saldo_abierto), tono: 'warning' as const,
+            hint: `${sum(c, (x) => x.facturas_abiertas)} documentos` },
+          { label: 'Facturado', valor: sum(c, (x) => x.monto_total),
+            hint: `${sum(c, (x) => x.facturas_totales)} documentos` },
+        ],
+      }
+    }
+
+    // Por cliente y el resto de las pestañas: la cartera, filtrada por el buscador.
+    const cs = clientesFiltrados
+    return {
+      alcance: 'clientes' as const, filtrando: !!q, cantidad: cs.length,
+      tarjetas: [
+        { label: 'Deuda total', valor: sum(cs, (c) => c.deuda_total),
+          hint: `${cs.filter((c) => Number(c.deuda_total) > 0).length} clientes` },
+        { label: 'Vencido', valor: sum(cs, (c) => c.vencido), tono: 'danger' as const,
+          hint: `${pctDe(sum(cs, (c) => c.vencido), sum(cs, (c) => c.deuda_total))} de la cartera` },
+        { label: 'Más de 30 días',
+          valor: sum(cs, (c) => Number(c.atraso_31_60) + Number(c.atraso_60_mas)),
+          tono: 'danger' as const, hint: 'Riesgo real de incobrable' },
+        { label: 'Por vencer', valor: sum(cs, (c) => c.por_vencer), hint: 'Todavía dentro del plazo' },
+        { label: 'A favor del cliente',
+          valor: sum(cs, (c) => Number(c.nota_credito) + Number(c.pago_a_cuenta)),
+          tono: 'warning' as const, hint: 'Notas de crédito y pagos sin imputar' },
+      ],
+    }
+  }, [pestana, q, periodo.desde, periodo.hasta, clientesFiltrados, facturasFiltradas,
+      documentosFiltrados, comportamientoFiltrado, resumenFacturas, estadoFactura,
+      clienteFactura, filtroComport])
+
   /** Clientes que aparecen en las facturas, para el filtro por cliente. */
   const clientesDeFacturas = useMemo(() => {
     const m = new Map<string, string>()
@@ -341,20 +438,27 @@ export function Cobranza() {
       {clientes.isLoading && <Skeleton className="h-24" />}
 
       {clientes.data && (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <StatCard label="Deuda total" value={moneyShort(resumen.deuda)}
-            hint={`${resumen.conDeuda} clientes`} icon={<Users className="h-4 w-4" />} />
-          <StatCard label="Vencido" value={moneyShort(resumen.vencido)}
-            tone={resumen.vencido > 0 ? 'danger' : 'positive'}
-            hint={`${pctDe(resumen.vencido, resumen.deuda)} de la cartera`}
-            icon={<AlertTriangle className="h-4 w-4" />} />
-          <StatCard label="Más de 30 días" value={moneyShort(resumen.grave)}
-            tone={resumen.grave > 0 ? 'danger' : 'default'} hint="Riesgo real de incobrable" />
-          <StatCard label="Por vencer" value={moneyShort(resumen.porVencer)} tone="default"
-            hint="Todavía dentro del plazo" icon={<Clock className="h-4 w-4" />} />
-          <StatCard label="A favor del cliente" value={moneyShort(resumen.credito)}
-            hint="Notas de crédito y pagos sin imputar" tone={resumen.credito > 0 ? 'warning' : 'default'} />
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            {resumen.tarjetas.map((t) => (
+              <StatCard key={t.label} label={t.label}
+                value={'texto' in t && t.texto !== undefined ? t.texto : money(t.valor ?? 0)}
+                hint={t.hint}
+                tone={('valor' in t && Number(t.valor) === 0) ? 'default' : t.tono} />
+            ))}
+          </div>
+
+          {resumen.filtrando && (
+            <p className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+              Estos números son de lo que hay en pantalla ({resumen.cantidad} resultado(s) con el filtro
+              aplicado), no de la cartera completa.
+              <span className="text-slate-400">
+                Cartera total: {money(carteraTotal.deuda)} en {carteraTotal.conDeuda} clientes.
+              </span>
+            </p>
+          )}
+        </>
       )}
 
       <div className="mt-4 mb-3 flex flex-wrap items-center gap-3">
@@ -1672,17 +1776,6 @@ function Dato({ label, valor, tono }: { label: string; valor: string; tono?: 'bu
 type Orden = 'emision' | 'vencimiento' | 'monto'
 type Filtro = 'todas' | 'vencidas' | 'graves' | 'por_vencer' | 'abonadas' | 'pagadas'
 
-/** Lo que el selector de facturas le informa al resumen de arriba. */
-interface ResumenSeleccion {
-  documentos: number
-  saldo: number
-  vencido: number
-  seleccionadas: number
-  montoSeleccionado: number
-  filtro: Filtro
-  mes: string
-  totalDocumentos: number
-}
 
 const FILTRO_LABEL: Record<Filtro, string> = {
   todas: 'Por cobrar',
@@ -1717,20 +1810,13 @@ function Vencimiento({ doc }: { doc: CuentaPorCobrar }) {
   return <span className={dias <= 7 ? 'text-amber-600' : 'text-slate-500'}>en {dias} días</span>
 }
 
-function SelectorFacturas({
-  documentos, historial, cargando, reparto, setReparto, disponible, onResumen,
-}: {
-  documentos: CuentaPorCobrar[]
-  /** Todas las facturas del cliente, pagadas incluidas. Sirve para consultar
-   *  mientras se registra el cobro: el cliente suele preguntar por una que ya pagó. */
-  historial: FacturaConPago[]
-  cargando: boolean
-  reparto: Record<string, string>
-  setReparto: (f: (r: Record<string, string>) => Record<string, string>) => void
-  disponible: number
-  /** Avisa hacia arriba qué quedó visible, para que el resumen no se desincronice. */
-  onResumen?: (r: ResumenSeleccion) => void
-}) {
+/**
+ * El filtro de facturas del modal de cobro. Vive fuera del selector porque el
+ * resumen de arriba y el panel del cliente tienen que mirar exactamente lo
+ * mismo que la lista: con el estado adentro del selector, filtrar por marzo
+ * dejaba el encabezado mostrando el total del año.
+ */
+function useFiltroFacturas(documentos: CuentaPorCobrar[], historial: FacturaConPago[]) {
   const [orden, setOrden] = useState<Orden>('emision')
   const [filtro, setFiltro] = useState<Filtro>('todas')
   const [buscar, setBuscar] = useState('')
@@ -1776,27 +1862,34 @@ function SelectorFacturas({
       .sort((a, b) => (b.ultimo_pago ?? '').localeCompare(a.ultimo_pago ?? ''))
   }, [pagadas, buscar, mes])
 
+  const acotado = filtro !== 'todas' || !!mes || !!buscar.trim()
+
+  return {
+    orden, setOrden, filtro, setFiltro, buscar, setBuscar, mes, setMes,
+    mesesDisponibles, pagadas, visibles, pagadasVisibles, acotado,
+    documentos,
+    totalDocumentos: documentos.length,
+  }
+}
+
+type FiltroFacturas = ReturnType<typeof useFiltroFacturas>
+
+function SelectorFacturas({
+  f, cargando, reparto, setReparto, disponible,
+}: {
+  f: FiltroFacturas
+  cargando: boolean
+  reparto: Record<string, string>
+  setReparto: (r: (x: Record<string, string>) => Record<string, string>) => void
+  disponible: number
+}) {
+  const {
+    orden, setOrden, filtro, setFiltro, buscar, setBuscar, mes, setMes,
+    mesesDisponibles, pagadas, visibles, pagadasVisibles, documentos,
+  } = f
+
   const saldoVisible = visibles.reduce((a, d) => a + Number(d.saldo), 0)
   const seleccionadas = Object.keys(reparto).filter((k) => Number(reparto[k]) > 0).length
-  const montoSeleccionado = Object.values(reparto).reduce((a, v) => a + (Number(v) || 0), 0)
-  const vencidoVisible = visibles.filter((d) => d.dias_atraso > 0)
-    .reduce((a, d) => a + Number(d.saldo), 0)
-
-  // El resumen de arriba tiene que mirar lo mismo que la lista: si se filtra
-  // por marzo, "por cobrar" no puede seguir mostrando el total del año.
-  useEffect(() => {
-    onResumen?.({
-      documentos: filtro === 'pagadas' ? pagadasVisibles.length : visibles.length,
-      saldo: saldoVisible,
-      vencido: vencidoVisible,
-      seleccionadas,
-      montoSeleccionado,
-      filtro,
-      mes,
-      totalDocumentos: documentos.length,
-    })
-  }, [onResumen, filtro, mes, visibles.length, pagadasVisibles.length,
-      saldoVisible, vencidoVisible, seleccionadas, montoSeleccionado, documentos.length])
 
   /** Reparte lo disponible entre las facturas visibles, en el orden en que se ven. */
   function repartir() {
@@ -2023,36 +2116,92 @@ function ResumenPagoCliente({ customerId }: { customerId: string }) {
 
 // ---------------------------------------------------------------- panel del cliente
 /** Cómo está la cuenta del cliente, antes de decidir qué se cobra. */
-function PanelCliente({ c }: { c: EstadoCuentaCliente }) {
-  const tramos = [
-    { label: 'Por vencer', valor: Number(c.por_vencer), clase: 'bg-emerald-500' },
-    { label: '1-15 días', valor: Number(c.atraso_1_15), clase: 'bg-amber-400' },
-    { label: '16-30 días', valor: Number(c.atraso_16_30), clase: 'bg-orange-500' },
-    { label: '31-60 días', valor: Number(c.atraso_31_60), clase: 'bg-red-500' },
-    { label: '+60 días', valor: Number(c.atraso_60_mas), clase: 'bg-red-800' },
-  ].filter((t) => t.valor > 0)
+function PanelCliente({
+  c, f, reparto,
+}: {
+  c: EstadoCuentaCliente
+  /** El filtro activo del selector: estas cifras se mueven con él. */
+  f: FiltroFacturas
+  reparto: Record<string, string>
+}) {
+  // Todo lo de arriba se calcula sobre lo visible. Antes salía de
+  // v_estado_cuenta_cliente, que es la cuenta completa, y al filtrar por un mes
+  // el encabezado seguía mostrando el total del año.
+  const r = useMemo(() => {
+    // Con el filtro en "ya pagadas" no hay deuda que resumir: la lista de abajo
+    // muestra facturas saldadas.
+    const docs = f.filtro === 'pagadas' ? [] : f.visibles
+    const suma = (p: (d: CuentaPorCobrar) => boolean) =>
+      docs.filter(p).reduce((a, d) => a + Number(d.saldo), 0)
+    return {
+      deuda: suma(() => true),
+      vencido: suma((d) => d.dias_atraso > 0),
+      documentos: docs.length,
+      peorAtraso: docs.reduce((a, d) => Math.max(a, d.dias_atraso), 0),
+      vencePrimero: docs.map((d) => d.due_date).filter(Boolean).sort()[0] ?? null,
+      tramos: [
+        { label: 'Por vencer', valor: suma((d) => d.dias_atraso === 0), clase: 'bg-emerald-500' },
+        { label: '1-15 días', valor: suma((d) => d.dias_atraso >= 1 && d.dias_atraso <= 15), clase: 'bg-amber-400' },
+        { label: '16-30 días', valor: suma((d) => d.dias_atraso >= 16 && d.dias_atraso <= 30), clase: 'bg-orange-500' },
+        { label: '31-60 días', valor: suma((d) => d.dias_atraso >= 31 && d.dias_atraso <= 60), clase: 'bg-red-500' },
+        { label: '+60 días', valor: suma((d) => d.dias_atraso > 60), clase: 'bg-red-800' },
+      ].filter((t) => t.valor > 0),
+    }
+  }, [f.filtro, f.visibles])
 
-  const total = Number(c.deuda_total) || 1
+  const total = r.deuda || 1
   const aFavor = Number(c.nota_credito) + Number(c.pago_a_cuenta)
+  const seleccionadas = Object.keys(reparto).filter((k) => Number(reparto[k]) > 0).length
+  const montoSeleccionado = Object.values(reparto).reduce((a, v) => a + (Number(v) || 0), 0)
 
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Dato label="Deuda total" valor={money(c.deuda_total)} />
-        <Dato label="Vencido" valor={money(c.vencido)} tono={Number(c.vencido) > 0 ? 'malo' : undefined} />
-        <Dato label="A favor" valor={aFavor > 0 ? money(aFavor) : '—'} tono={aFavor > 0 ? 'bueno' : undefined} />
-        <Dato label="Documentos" valor={String(c.documentos)} />
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+          {f.acotado ? 'Según el filtro aplicado' : 'Toda la cuenta del cliente'}
+        </p>
+        {f.acotado && (
+          <>
+            <span className="rounded-full bg-navy-900 px-2 py-0.5 text-[11px] font-medium text-white">
+              {FILTRO_LABEL[f.filtro]}
+            </span>
+            {f.mes && (
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700 capitalize">
+                {nombreMes(f.mes)}
+              </span>
+            )}
+            {f.buscar.trim() && (
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                «{f.buscar.trim()}»
+              </span>
+            )}
+            <button type="button" className="text-[11px] text-sea-600 hover:underline"
+              onClick={() => { f.setFiltro('todas'); f.setMes(''); f.setBuscar('') }}>
+              Quitar el filtro
+            </button>
+          </>
+        )}
       </div>
 
-      {tramos.length > 0 && (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Dato label={f.acotado ? 'Saldo filtrado' : 'Deuda total'} valor={money(r.deuda)} />
+        <Dato label="Vencido" valor={money(r.vencido)} tono={r.vencido > 0 ? 'malo' : undefined} />
+        <Dato label="A favor" valor={aFavor > 0 ? money(aFavor) : '—'} tono={aFavor > 0 ? 'bueno' : undefined} />
+        <Dato
+          label="Documentos"
+          valor={f.acotado ? `${r.documentos} de ${f.totalDocumentos}` : String(r.documentos)}
+        />
+      </div>
+
+      {r.tramos.length > 0 && (
         <div className="mt-3">
           <div className="flex h-2 overflow-hidden rounded-full bg-slate-200">
-            {tramos.map((t) => (
+            {r.tramos.map((t) => (
               <div key={t.label} className={t.clase} style={{ width: `${(t.valor / total) * 100}%` }} />
             ))}
           </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-            {tramos.map((t) => (
+            {r.tramos.map((t) => (
               <span key={t.label} className="flex items-center gap-1.5 text-slate-600">
                 <span className={clsx('h-2 w-2 rounded-full', t.clase)} />
                 {t.label} <span className="tabular-nums font-medium">{money(t.valor)}</span>
@@ -2064,20 +2213,23 @@ function PanelCliente({ c }: { c: EstadoCuentaCliente }) {
 
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-200 pt-2 text-xs text-slate-500">
         <span>Plazo {c.payment_terms_days} días</span>
-        {c.peor_atraso > 0 && (
-          <span className="text-red-600">Peor atraso {c.peor_atraso} días</span>
-        )}
-        {c.vence_primero && <span>Vence primero {dateShort(c.vence_primero)}</span>}
+        {r.peorAtraso > 0 && <span className="text-red-600">Peor atraso {r.peorAtraso} días</span>}
+        {r.vencePrimero && <span>Vence primero {dateShort(r.vencePrimero)}</span>}
         <span>Último pago {c.ultimo_pago ? dateShort(c.ultimo_pago) : 'sin registros'}</span>
-        {c.sobre_limite && (
-          <span className="font-medium text-red-600">Sobre el límite de crédito</span>
+        {c.sobre_limite && <span className="font-medium text-red-600">Sobre el límite de crédito</span>}
+        {f.acotado && (
+          <span className="text-slate-400">Toda la cuenta: {money(c.deuda_total)} en {c.documentos} doc.</span>
+        )}
+        {seleccionadas > 0 && (
+          <span className="ml-auto rounded-full bg-sea-50 px-2.5 py-0.5 font-medium text-sea-700">
+            {seleccionadas} seleccionada(s) · {money(montoSeleccionado)}
+          </span>
         )}
       </div>
     </div>
   )
 }
 
-// ---------------------------------------------------------------- barra de imputación
 function BarraImputacion({ monto, imputado }: { monto: number; imputado: number }) {
   const resto = monto - imputado
   const pctImputado = monto > 0 ? Math.min((imputado / monto) * 100, 100) : 0
@@ -2119,7 +2271,6 @@ function ModalCobrar({
   const [notas, setNotas] = useState('')
   const [reparto, setReparto] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
-  const [resumen, setResumen] = useState<ResumenSeleccion | null>(null)
 
   const cliente = clientes.find((c) => c.customer_id === customerId)
 
@@ -2148,6 +2299,10 @@ function ModalCobrar({
       return data as FacturaConPago[]
     },
   })
+
+  // El filtro vive acá arriba para que el panel del cliente y el selector
+  // muestren siempre los mismos documentos.
+  const filtro = useFiltroFacturas(docs.data ?? [], historial.data ?? [])
 
   const montoNum = Number(monto) || 0
   const imputado = Object.values(reparto).reduce((a, v) => a + (Number(v) || 0), 0)
@@ -2245,17 +2400,15 @@ function ModalCobrar({
           </label>
         </div>
 
-        {cliente && <PanelCliente c={cliente} />}
+        {cliente && <PanelCliente c={cliente} f={filtro} reparto={reparto} />}
 
         {customerId && (
           <>
             <BarraImputacion monto={montoNum} imputado={imputado} />
             <ResumenPagoCliente customerId={customerId} />
-            <ResumenFiltrado r={resumen} />
-            <SelectorFacturas documentos={docs.data ?? []} historial={historial.data ?? []}
-              cargando={docs.isLoading}
+            <SelectorFacturas f={filtro} cargando={docs.isLoading}
               reparto={reparto} setReparto={setReparto}
-              disponible={montoNum} onResumen={setResumen} />
+              disponible={montoNum} />
           </>
         )}
 
@@ -2291,7 +2444,6 @@ function ModalImputar({
 }) {
   const [reparto, setReparto] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
-  const [resumen, setResumen] = useState<ResumenSeleccion | null>(null)
 
   const cliente = useQuery({
     queryKey: ['estado-cuenta', pago.customer_id],
@@ -2325,6 +2477,7 @@ function ModalImputar({
     },
   })
 
+  const filtro = useFiltroFacturas(docs.data ?? [], historial.data ?? [])
   const imputado = Object.values(reparto).reduce((a, v) => a + (Number(v) || 0), 0)
   const resto = Number(pago.amount) - imputado
 
@@ -2364,16 +2517,13 @@ function ModalImputar({
           {pago.reference && ` · ref ${pago.reference}`}
         </p>
 
-        {cliente.data && <PanelCliente c={cliente.data} />}
+        {cliente.data && <PanelCliente c={cliente.data} f={filtro} reparto={reparto} />}
 
         <BarraImputacion monto={Number(pago.amount)} imputado={imputado} />
 
-        <ResumenFiltrado r={resumen} />
-
-        <SelectorFacturas documentos={docs.data ?? []} historial={historial.data ?? []}
-          cargando={docs.isLoading}
+        <SelectorFacturas f={filtro} cargando={docs.isLoading}
           reparto={reparto} setReparto={setReparto}
-          disponible={Number(pago.amount)} onResumen={setResumen} />
+          disponible={Number(pago.amount)} />
 
         {resto < -0.5 && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -2385,48 +2535,3 @@ function ModalImputar({
   )
 }
 
-/**
- * El resumen que acompaña al selector de facturas dentro del modal de cobro.
- * Mira exactamente lo mismo que la lista de abajo: si se filtra por un mes o
- * por las vencidas, estos números se mueven con el filtro. Antes el encabezado
- * mostraba siempre el total del cliente y no calzaba con lo que se veía.
- */
-function ResumenFiltrado({ r }: { r: ResumenSeleccion | null }) {
-  if (!r) return null
-  const acotado = r.filtro !== 'todas' || !!r.mes
-  const etiqueta = r.filtro === 'pagadas' ? 'facturas pagadas' : 'documentos por cobrar'
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
-      <span className="font-medium text-slate-600">
-        {acotado ? 'Con el filtro aplicado' : 'Toda la deuda del cliente'}
-      </span>
-
-      <span className="text-slate-500">
-        <span className="font-semibold text-navy-900">{r.documentos}</span> {etiqueta}
-        {acotado && r.filtro !== 'pagadas' && (
-          <span className="text-slate-400"> de {r.totalDocumentos}</span>
-        )}
-      </span>
-
-      {r.filtro !== 'pagadas' && (
-        <>
-          <span className="text-slate-500">
-            Saldo <span className="font-semibold text-navy-900">{money(r.saldo)}</span>
-          </span>
-          {r.vencido > 0 && (
-            <span className="font-medium text-red-600">{money(r.vencido)} vencido</span>
-          )}
-        </>
-      )}
-
-      {r.mes && <span className="text-slate-400 capitalize">{nombreMes(r.mes)}</span>}
-
-      {r.seleccionadas > 0 && (
-        <span className="ml-auto rounded-full bg-sea-50 px-2.5 py-0.5 font-medium text-sea-700">
-          {r.seleccionadas} seleccionada(s) · {money(r.montoSeleccionado)}
-        </span>
-      )}
-    </div>
-  )
-}
