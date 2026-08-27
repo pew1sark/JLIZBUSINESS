@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertTriangle, ArrowRightLeft, Check, Clock, Download, Inbox, Link2, MessageCircle,
-  RotateCcw, Search, Trash2, Users, Wallet, X,
+  AlertTriangle, ArrowRightLeft, CalendarClock, Check, Clock, Download, Inbox, Link2, MessageCircle,
+  RotateCcw, Search, Timer, Trash2, Users, Wallet, X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
 import type {
-  AvisoPago, CuentaPorCobrar, EstadoCuentaCliente, Imputacion, PagoCartola, PagoSinImputar, PaymentMethod,
+  AvisoPago, ComportamientoPago, CuentaPorCobrar, EstadoCuentaCliente, FacturaConPago,
+  Imputacion, PagoCartola, PagoDetalle, PagoSinImputar, PaymentMethod,
 } from '../../lib/types'
-import { PAYMENT_METHOD_LABEL } from '../../lib/constants'
+import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE } from '../../lib/constants'
 import { dateShort, dateTime, money, moneyShort } from '../../lib/format'
 import { descargarCsv } from '../../lib/csv'
 import { FiltroPeriodo, Paginador } from '../../components/Filtros'
-import { rangoDe, type Periodo } from '../../lib/periodo'
+import { nombreMes, rangoDe, type Periodo } from '../../lib/periodo'
 import {
   Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap,
 } from '../../components/ui'
@@ -26,7 +27,7 @@ const TRAMO: Record<string, { label: string; clase: string }> = {
   atraso_grave: { label: 'Más de 30 días', clase: 'bg-red-100 text-red-700' },
 }
 
-type Pestana = 'clientes' | 'documentos' | 'pagos' | 'avisos'
+type Pestana = 'clientes' | 'facturas' | 'documentos' | 'comportamiento' | 'pagos' | 'avisos'
 
 export function Cobranza() {
   const qc = useQueryClient()
@@ -38,6 +39,11 @@ export function Cobranza() {
   const [cartola, setCartola] = useState<string | null>(null)
   const [cobrar, setCobrar] = useState<{ customer_id: string; cliente: string } | null>(null)
   const [reimputar, setReimputar] = useState<PagoSinImputar | null>(null)
+  // En la pestaña de facturas el período puede leerse de dos formas: cuándo se
+  // emitió o cuándo se pagó. Son preguntas distintas ("qué facturé en marzo"
+  // contra "qué me pagaron en marzo") y las dos se hacen igual de seguido.
+  const [ejeFecha, setEjeFecha] = useState<'emision' | 'pago'>('emision')
+  const [estadoFactura, setEstadoFactura] = useState<'todas' | 'pagadas' | 'impagas'>('todas')
 
   const clientes = useQuery({
     queryKey: ['cob-clientes'],
@@ -57,6 +63,32 @@ export function Cobranza() {
         .order('dias_atraso', { ascending: false }).limit(2000)
       if (error) throw error
       return data as CuentaPorCobrar[]
+    },
+  })
+
+  // Todas las facturas, pagadas incluidas. Es la vista que faltaba: al pagarse,
+  // una factura desaparecía de v_cuentas_por_cobrar y con ella la fecha de pago.
+  const facturas = useQuery({
+    queryKey: ['cob-facturas'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_facturas_con_pago').select('*')
+        .order('issued_at', { ascending: false })
+        .order('doc_number', { ascending: false })
+        .limit(5000)
+      if (error) throw error
+      return data as FacturaConPago[]
+    },
+  })
+
+  const comportamiento = useQuery({
+    queryKey: ['cob-comportamiento'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_comportamiento_pago_cliente').select('*')
+        .order('dias_promedio', { ascending: false, nullsFirst: false })
+      if (error) throw error
+      return data as ComportamientoPago[]
     },
   })
 
@@ -82,7 +114,8 @@ export function Cobranza() {
   })
 
   function refrescar() {
-    for (const k of ['cob-clientes', 'cob-documentos', 'cob-sin-imputar', 'cob-avisos',
+    for (const k of ['cob-clientes', 'cob-documentos', 'cob-facturas', 'cob-comportamiento',
+                     'cob-sin-imputar', 'cob-pagos-detalle', 'cob-avisos',
                      'finance-kpis', 'cuentas-cobrar', 'dashboard-kpis']) {
       qc.invalidateQueries({ queryKey: [k] })
     }
@@ -119,9 +152,46 @@ export function Cobranza() {
       || d.code.toLowerCase().includes(q)
   })
 
-  useEffect(() => { setPagina(0) }, [buscar, periodo.desde, periodo.hasta, pestana])
+  // Las facturas se filtran por el eje que se haya elegido: la fecha de
+  // emisión o la del pago. Con eje "pago", lo que nunca se pagó no aparece.
+  const facturasFiltradas = useMemo(() => (facturas.data ?? []).filter((f) => {
+    if (estadoFactura === 'pagadas' && f.payment_status !== 'pagado') return false
+    if (estadoFactura === 'impagas' && f.payment_status === 'pagado') return false
+
+    const hayRango = !!(periodo.desde || periodo.hasta)
+    const fecha = ejeFecha === 'pago' ? f.ultimo_pago : f.issued_at
+    // Con el eje en la fecha de pago, una factura sin pagar no tiene fecha que
+    // comparar: cae fuera de cualquier rango, pero sigue apareciendo si no hay rango.
+    if (hayRango) {
+      if (!fecha) return false
+      if (periodo.desde && fecha < periodo.desde) return false
+      if (periodo.hasta && fecha > periodo.hasta) return false
+    }
+
+    return !q || f.cliente.toLowerCase().includes(q) || f.doc_number.toLowerCase().includes(q)
+  }), [facturas.data, estadoFactura, ejeFecha, periodo.desde, periodo.hasta, q])
+
+  const resumenFacturas = useMemo(() => {
+    const f = facturasFiltradas
+    const pagadas = f.filter((x) => x.payment_status === 'pagado')
+    const dias = pagadas.map((x) => x.dias_en_pagar).filter((d): d is number => d !== null)
+    return {
+      total: f.reduce((a, x) => a + Number(x.total), 0),
+      cobrado: f.reduce((a, x) => a + Number(x.amount_paid), 0),
+      saldo: f.reduce((a, x) => a + Number(x.saldo), 0),
+      pagadas: pagadas.length,
+      diasPromedio: dias.length ? Math.round(dias.reduce((a, d) => a + d, 0) / dias.length) : null,
+    }
+  }, [facturasFiltradas])
+
+  const comportamientoFiltrado = (comportamiento.data ?? [])
+    .filter((c) => c.facturas_totales > 0)
+    .filter((c) => !q || c.cliente.toLowerCase().includes(q) || (c.rut ?? '').includes(q))
+
+  useEffect(() => { setPagina(0) }, [buscar, periodo.desde, periodo.hasta, pestana, ejeFecha, estadoFactura])
 
   const documentosPagina = documentosFiltrados.slice(pagina * porPagina, (pagina + 1) * porPagina)
+  const facturasPagina = facturasFiltradas.slice(pagina * porPagina, (pagina + 1) * porPagina)
 
   function exportarCartera() {
     const filas: (string | number)[][] = [[
@@ -145,6 +215,45 @@ export function Cobranza() {
         d.total, d.amount_paid, d.saldo, d.dias_atraso])
     }
     descargarCsv(filas, 'documentos-por-cobrar')
+  }
+
+  function exportarFacturas() {
+    const filas: (string | number)[][] = [[
+      'Documento', 'Tipo', 'Cliente', 'RUT', 'Emitida', 'Vence', 'Neto', 'IVA', 'Total',
+      'Pagado', 'Saldo', 'Estado', 'Fecha de pago', 'N° de pagos', 'Forma de pago',
+      'Días en pagar', 'Días vs. plazo', 'Días esperando',
+    ]]
+    for (const f of facturasFiltradas) {
+      filas.push([
+        f.doc_number, f.doc_type, f.cliente, f.rut ?? '', f.issued_at, f.due_date ?? '',
+        f.net_amount, f.tax_amount, f.total, f.amount_paid, f.saldo, f.payment_status,
+        f.ultimo_pago ?? '', f.n_pagos, f.metodos ?? '',
+        f.dias_en_pagar ?? '', f.dias_vs_plazo ?? '', f.dias_esperando ?? '',
+      ])
+    }
+    descargarCsv(filas, `facturas-${periodo.desde ?? 'todo'}`)
+  }
+
+  function exportarComportamiento() {
+    const filas: (string | number)[][] = [[
+      'Cliente', 'RUT', 'Plazo pactado', 'Facturas emitidas', 'Monto facturado',
+      'Facturas pagadas', 'Monto pagado', 'Días promedio', 'Días mediana', 'Días mínimo',
+      'Días máximo', 'Desviación', 'Promedio últimos 90 días', 'Exceso sobre el plazo',
+      'Pagadas a tiempo', 'Pagadas fuera de plazo', '% a tiempo',
+      'Facturas abiertas', 'Saldo abierto', 'Espera promedio', 'Espera máxima', 'Último pago',
+    ]]
+    for (const c of comportamientoFiltrado) {
+      filas.push([
+        c.cliente, c.rut ?? '', c.plazo_pactado, c.facturas_totales, c.monto_total,
+        c.facturas_pagadas, c.monto_pagado, c.dias_promedio ?? '', c.dias_mediana ?? '',
+        c.dias_minimo ?? '', c.dias_maximo ?? '', c.dias_desviacion ?? '',
+        c.dias_promedio_90d ?? '', c.exceso_sobre_plazo ?? '',
+        c.a_tiempo, c.fuera_de_plazo, c.pct_a_tiempo ?? '',
+        c.facturas_abiertas, c.saldo_abierto, c.espera_promedio ?? '', c.espera_maxima ?? '',
+        c.ultimo_pago ?? '',
+      ])
+    }
+    descargarCsv(filas, 'comportamiento-de-pago-por-cliente')
   }
 
   return (
@@ -183,7 +292,9 @@ export function Cobranza() {
         <div className="flex gap-1 rounded-lg bg-slate-200/60 p-1 text-sm">
           {([
             ['clientes', `Por cliente${clientesFiltrados.length ? ` (${clientesFiltrados.length})` : ''}`],
-            ['documentos', `Documentos${documentosFiltrados.length ? ` (${documentosFiltrados.length})` : ''}`],
+            ['facturas', `Facturas${facturasFiltradas.length ? ` (${facturasFiltradas.length})` : ''}`],
+            ['documentos', `Por cobrar${documentosFiltrados.length ? ` (${documentosFiltrados.length})` : ''}`],
+            ['comportamiento', 'Cómo pagan'],
             ['pagos', `Pagos${sinImputar.data?.length ? ` · ${sinImputar.data.length} sin imputar` : ''}`],
             ['avisos', `Avisos del portal${avisosPendientes ? ` (${avisosPendientes})` : ''}`],
           ] as [Pestana, string][]).map(([k, label]) => (
@@ -195,23 +306,63 @@ export function Cobranza() {
           ))}
         </div>
 
-        {(pestana === 'clientes' || pestana === 'documentos') && (
+        {(pestana === 'clientes' || pestana === 'documentos'
+          || pestana === 'facturas' || pestana === 'comportamiento') && (
           <>
             <div className="relative flex-1 sm:max-w-xs">
               <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400" />
               <input className="input pl-9" placeholder="Buscar cliente, RUT o factura…"
                 value={buscar} onChange={(e) => setBuscar(e.target.value)} />
             </div>
-            {pestana === 'documentos' && (
+            {(pestana === 'documentos' || pestana === 'facturas') && (
               <FiltroPeriodo valor={periodo} onChange={setPeriodo} />
             )}
             <button className="btn-secondary ml-auto"
-              onClick={pestana === 'clientes' ? exportarCartera : exportarDocumentos}>
+              onClick={
+                pestana === 'clientes' ? exportarCartera
+                : pestana === 'facturas' ? exportarFacturas
+                : pestana === 'comportamiento' ? exportarComportamiento
+                : exportarDocumentos
+              }>
               <Download className="h-4 w-4" /> Exportar
             </button>
           </>
         )}
       </div>
+
+      {pestana === 'facturas' && (
+        <div className="mb-3 flex flex-wrap items-center gap-4 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">El período se lee por</span>
+            {([['emision', 'fecha de emisión'], ['pago', 'fecha de pago']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setEjeFecha(k)}
+                className={clsx('rounded-full px-3 py-1 text-xs font-medium',
+                  ejeFecha === k ? 'bg-navy-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-200')}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">Mostrar</span>
+            {([['todas', 'Todas'], ['pagadas', 'Pagadas'], ['impagas', 'No pagadas']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setEstadoFactura(k)}
+                className={clsx('rounded-full px-3 py-1 text-xs font-medium',
+                  estadoFactura === k ? 'bg-navy-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-200')}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <span className="ml-auto text-xs text-slate-500">
+            {money(resumenFacturas.total)} facturado · {money(resumenFacturas.cobrado)} cobrado
+            {resumenFacturas.saldo > 0 && <> · <span className="font-medium text-amber-600">{money(resumenFacturas.saldo)} por cobrar</span></>}
+            {resumenFacturas.diasPromedio !== null && (
+              <> · {resumenFacturas.pagadas} pagadas en {resumenFacturas.diasPromedio} días promedio</>
+            )}
+          </span>
+        </div>
+      )}
 
       {pestana === 'clientes' && (
         <TablaClientes filas={clientesFiltrados} cargando={clientes.isLoading}
@@ -228,6 +379,24 @@ export function Cobranza() {
             </div>
           )}
         </>
+      )}
+
+      {pestana === 'facturas' && (
+        <>
+          <TablaFacturas filas={facturasPagina} cargando={facturas.isLoading}
+            ejeFecha={ejeFecha} />
+          {facturasFiltradas.length > 0 && (
+            <div className="card mt-3">
+              <Paginador total={facturasFiltradas.length} pagina={pagina} porPagina={porPagina}
+                onPagina={setPagina} onPorPagina={setPorPagina} />
+            </div>
+          )}
+        </>
+      )}
+
+      {pestana === 'comportamiento' && (
+        <TablaComportamiento filas={comportamientoFiltrado} cargando={comportamiento.isLoading}
+          onCartola={setCartola} />
       )}
 
       {pestana === 'pagos' && (
@@ -398,7 +567,445 @@ function TablaDocumentos({ filas, cargando }: { filas: CuentaPorCobrar[]; cargan
 
 const etiquetaDoc = (t: string) =>
   ({ factura: 'Factura', boleta: 'Boleta', nota_debito: 'Nota de débito',
+     nota_credito: 'Nota de crédito',
      pedido: 'Pedido interno', saldo_inicial: 'Saldo arrastrado' } as Record<string, string>)[t] ?? t
+
+// ---------------------------------------------------------------- todas las facturas
+/**
+ * El historial completo: pagadas y no pagadas, con el día exacto en que se
+ * pagó cada una. La tabla de arriba (`TablaDocumentos`) solo muestra deuda
+ * viva; ésta es la que sirve para revisar un mes ya cerrado.
+ */
+function TablaFacturas({
+  filas, cargando, ejeFecha,
+}: {
+  filas: FacturaConPago[]
+  cargando: boolean
+  ejeFecha: 'emision' | 'pago'
+}) {
+  if (cargando) return <Card><Skeleton className="h-64" /></Card>
+  if (filas.length === 0) {
+    return (
+      <Card>
+        <EmptyState title="Sin facturas en este filtro"
+          hint={ejeFecha === 'pago'
+            ? 'Con el período leído por fecha de pago solo aparecen las facturas que ya se pagaron. Cambia a «fecha de emisión» para ver también las pendientes.'
+            : 'Prueba ampliando el período o eligiendo otro mes.'}
+          icon={<CalendarClock className="h-8 w-8" />} />
+      </Card>
+    )
+  }
+
+  return (
+    <TableWrap>
+      <thead className="bg-slate-50">
+        <tr>
+          <th className="th">Documento</th>
+          <th className="th">Cliente</th>
+          <th className="th">Emitida</th>
+          <th className="th">Vence</th>
+          <th className="th text-right">Total</th>
+          <th className="th text-right">Saldo</th>
+          <th className="th">Fecha de pago</th>
+          <th className="th text-right">Días</th>
+          <th className="th">Estado</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {filas.map((f) => {
+          const saldo = Number(f.saldo)
+          const esNC = f.doc_type === 'nota_credito'
+          return (
+            <tr key={f.invoice_id} className="hover:bg-slate-50">
+              <td className="td">
+                <p className="font-medium text-navy-900">{f.doc_number}</p>
+                <p className="text-xs text-slate-400">{etiquetaDoc(f.doc_type)}</p>
+              </td>
+              <td className="td font-medium text-slate-800">{f.cliente}</td>
+              <td className="td text-slate-500">{dateShort(f.issued_at)}</td>
+              <td className="td text-slate-500">{dateShort(f.due_date)}</td>
+              <td className={clsx('td text-right tabular-nums', esNC && 'text-emerald-600')}>
+                {money(f.total)}
+              </td>
+              <td className={clsx('td text-right tabular-nums',
+                saldo > 0 ? 'font-medium text-amber-600' : 'text-slate-400')}>
+                {money(saldo)}
+              </td>
+              <td className="td">
+                {f.ultimo_pago ? (
+                  <div>
+                    <p className="font-medium text-slate-700">{dateShort(f.ultimo_pago)}</p>
+                    <p className="text-xs text-slate-400">
+                      {f.n_pagos > 1
+                        ? `${f.n_pagos} pagos desde ${dateShort(f.primer_pago)}`
+                        : (f.metodos ?? '')}
+                    </p>
+                  </div>
+                ) : (
+                  <span className="text-slate-300">sin pago</span>
+                )}
+              </td>
+              <td className="td text-right tabular-nums">
+                <DiasEnPagar factura={f} />
+              </td>
+              <td className="td">
+                <span className={`badge ${PAYMENT_STATUS_STYLE[f.payment_status]}`}>
+                  {PAYMENT_STATUS_LABEL[f.payment_status]}
+                </span>
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </TableWrap>
+  )
+}
+
+/**
+ * Cuántos días tardó en pagarse, o cuántos lleva esperando. El color mira el
+ * plazo pactado, no el número pelado: 40 días con 45 de plazo está bien.
+ */
+function DiasEnPagar({ factura: f }: { factura: FacturaConPago }) {
+  if (f.dias_en_pagar !== null) {
+    const fuera = f.dias_vs_plazo !== null && f.dias_vs_plazo > 0
+    return (
+      <span className={clsx('font-medium', fuera ? 'text-amber-600' : 'text-emerald-600')}
+        title={f.dias_vs_plazo === null ? undefined
+          : fuera ? `${f.dias_vs_plazo} días después del vencimiento`
+          : `${-f.dias_vs_plazo} días antes del vencimiento`}>
+        {f.dias_en_pagar} d
+      </span>
+    )
+  }
+  if (f.dias_esperando !== null) {
+    const atraso = f.dias_atraso ?? 0
+    return (
+      <span className={clsx(atraso > 30 ? 'font-medium text-red-600'
+        : atraso > 0 ? 'text-amber-600' : 'text-slate-400')}>
+        {f.dias_esperando} d
+      </span>
+    )
+  }
+  return <span className="text-slate-300">—</span>
+}
+
+// ---------------------------------------------------------------- cómo paga cada cliente
+/**
+ * El resumen que responde "¿cuánto se demora este cliente?". Lo importante no
+ * es el promedio solo: un promedio de 35 días con desviación de 3 es un cliente
+ * con el que se puede planificar; el mismo promedio con desviación de 25, no.
+ */
+function TablaComportamiento({
+  filas, cargando, onCartola,
+}: {
+  filas: ComportamientoPago[]
+  cargando: boolean
+  onCartola: (id: string) => void
+}) {
+  if (cargando) return <Card><Skeleton className="h-64" /></Card>
+  if (filas.length === 0) {
+    return (
+      <Card>
+        <EmptyState title="Todavía no hay facturas para medir"
+          hint="El promedio de días se calcula sobre facturas ya pagadas."
+          icon={<Timer className="h-8 w-8" />} />
+      </Card>
+    )
+  }
+
+  const conDatos = filas.filter((c) => c.dias_promedio !== null)
+  const promedioGeneral = conDatos.length
+    ? Math.round(conDatos.reduce((a, c) => a + (c.dias_promedio ?? 0) * c.facturas_pagadas, 0)
+      / conDatos.reduce((a, c) => a + c.facturas_pagadas, 0))
+    : null
+
+  return (
+    <>
+      {promedioGeneral !== null && (
+        <p className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          En promedio te pagan a los <span className="font-medium text-slate-700">{promedioGeneral} días</span> de
+          emitida la factura, sobre {conDatos.reduce((a, c) => a + c.facturas_pagadas, 0)} facturas ya saldadas.
+          La columna «vs. plazo» es lo que se demoran de más respecto de lo pactado con cada uno.
+        </p>
+      )}
+
+      <TableWrap>
+        <thead className="bg-slate-50">
+          <tr>
+            <th className="th">Cliente</th>
+            <th className="th text-right">Plazo</th>
+            <th className="th text-right">Días promedio</th>
+            <th className="th text-right">Mediana</th>
+            <th className="th text-right">Rango</th>
+            <th className="th text-right">vs. plazo</th>
+            <th className="th text-right">A tiempo</th>
+            <th className="th text-right">Últimos 90 d</th>
+            <th className="th text-right">Abiertas</th>
+            <th className="th"></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {filas.map((c) => {
+            const exceso = c.exceso_sobre_plazo
+            const tendencia = c.dias_promedio_90d !== null && c.dias_promedio !== null
+              ? c.dias_promedio_90d - c.dias_promedio : null
+            return (
+              <tr key={c.customer_id} className="hover:bg-slate-50">
+                <td className="td">
+                  <p className="font-medium text-slate-800">{c.cliente}</p>
+                  <p className="text-xs text-slate-400">
+                    {c.facturas_pagadas} de {c.facturas_totales} facturas pagadas
+                    {c.ultimo_pago && ` · último pago ${dateShort(c.ultimo_pago)}`}
+                  </p>
+                </td>
+                <td className="td text-right tabular-nums text-slate-500">{c.plazo_pactado} d</td>
+                <td className="td text-right">
+                  {c.dias_promedio === null
+                    ? <span className="text-slate-300">—</span>
+                    : <span className="text-base font-semibold tabular-nums text-navy-900">{c.dias_promedio} d</span>}
+                </td>
+                <td className="td text-right tabular-nums text-slate-500">
+                  {c.dias_mediana === null ? '—' : `${Math.round(Number(c.dias_mediana))} d`}
+                </td>
+                <td className="td text-right text-xs tabular-nums text-slate-400">
+                  {c.dias_minimo === null ? '—' : `${c.dias_minimo}–${c.dias_maximo}`}
+                  {c.dias_desviacion !== null && c.dias_desviacion > 0 && (
+                    <span className="block">±{c.dias_desviacion}</span>
+                  )}
+                </td>
+                <td className="td text-right tabular-nums">
+                  {exceso === null ? <span className="text-slate-300">—</span>
+                    : exceso > 0
+                      ? <span className="font-medium text-amber-600">+{exceso} d</span>
+                      : <span className="text-emerald-600">{exceso} d</span>}
+                </td>
+                <td className="td text-right tabular-nums">
+                  {c.pct_a_tiempo === null ? <span className="text-slate-300">—</span> : (
+                    <span className={clsx(
+                      c.pct_a_tiempo >= 80 ? 'text-emerald-600'
+                      : c.pct_a_tiempo >= 50 ? 'text-amber-600' : 'text-red-600')}>
+                      {c.pct_a_tiempo}%
+                    </span>
+                  )}
+                </td>
+                <td className="td text-right tabular-nums text-xs">
+                  {c.dias_promedio_90d === null ? <span className="text-slate-300">—</span> : (
+                    <span title={tendencia === null ? undefined
+                      : tendencia > 0 ? `${tendencia} días más lento que su histórico`
+                      : `${-tendencia} días más rápido que su histórico`}>
+                      {c.dias_promedio_90d} d
+                      {tendencia !== null && Math.abs(tendencia) >= 3 && (
+                        <span className={clsx('ml-1', tendencia > 0 ? 'text-red-600' : 'text-emerald-600')}>
+                          {tendencia > 0 ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </td>
+                <td className="td text-right">
+                  {c.facturas_abiertas === 0
+                    ? <span className="text-slate-300">—</span>
+                    : (
+                      <div>
+                        <p className="tabular-nums text-slate-700">{moneyShort(c.saldo_abierto)}</p>
+                        <p className="text-xs text-slate-400">
+                          {c.facturas_abiertas} doc. · {c.espera_maxima} d máx.
+                        </p>
+                      </div>
+                    )}
+                </td>
+                <td className="td text-right">
+                  <button className="text-xs font-medium text-sea-600 hover:underline"
+                    onClick={() => onCartola(c.customer_id)}>
+                    Cartola
+                  </button>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </TableWrap>
+    </>
+  )
+}
+
+// ---------------------------------------------------------------- informe de fechas de pago
+/**
+ * Una fila por cada "este día entró plata y cubrió esta factura". Es el nivel
+ * de detalle que pide el contador y el que permite reconstruir una discusión
+ * con un cliente: no basta con saber que la factura está pagada, hay que poder
+ * decir qué día, con qué transferencia y con cuántos días de desfase.
+ */
+function InformeFechasPago() {
+  const [mes, setMes] = useState<string>('')
+  const [buscar, setBuscar] = useState('')
+  const [abierto, setAbierto] = useState(false)
+
+  const meses = useQuery({
+    queryKey: ['cob-meses-pago'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_meses_actividad').select('mes, cobros').gt('cobros', 0)
+        .order('mes', { ascending: false })
+      if (error) throw error
+      return data as { mes: string; cobros: number }[]
+    },
+  })
+
+  const detalle = useQuery({
+    queryKey: ['cob-pagos-detalle', mes],
+    enabled: abierto,
+    queryFn: async () => {
+      let q = supabase.from('v_pagos_detalle').select('*')
+        .order('fecha_pago', { ascending: false }).limit(3000)
+      if (mes) q = q.eq('mes_pago', mes)
+      const { data, error } = await q
+      if (error) throw error
+      return data as PagoDetalle[]
+    },
+  })
+
+  const q = buscar.trim().toLowerCase()
+  const filas = (detalle.data ?? []).filter(
+    (d) => !q || d.cliente.toLowerCase().includes(q) || (d.documento ?? '').toLowerCase().includes(q),
+  )
+
+  const total = filas.reduce((a, d) => a + Number(d.monto_imputado ?? 0), 0)
+  const conPlazo = filas.filter((d) => d.dias_desde_emision !== null)
+  const promedio = conPlazo.length
+    ? Math.round(conPlazo.reduce((a, d) => a + (d.dias_desde_emision ?? 0), 0) / conPlazo.length)
+    : null
+
+  function exportar() {
+    const f: (string | number)[][] = [[
+      'Fecha de pago', 'Cobro', 'Cliente', 'RUT', 'Documento', 'Emitido', 'Vence',
+      'Total del documento', 'Monto imputado', 'Monto del cobro', 'Forma de pago',
+      'N° de operación', 'Días desde la emisión', 'Días vs. vencimiento', 'Nota',
+    ]]
+    for (const d of filas) {
+      f.push([
+        d.fecha_pago, d.pago_code, d.cliente, d.rut ?? '', d.documento ?? '',
+        d.emitido ?? '', d.vence ?? '', d.total_documento ?? '', d.monto_imputado ?? '',
+        d.monto_pago, d.metodo, d.reference ?? '',
+        d.dias_desde_emision ?? '', d.dias_vs_vencimiento ?? '', d.notes ?? '',
+      ])
+    }
+    descargarCsv(f, `fechas-de-pago-${mes || 'todo'}`)
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Informe detallado de fechas de pago"
+        action={
+          <button className="btn-secondary px-3 py-1.5 text-xs" onClick={() => setAbierto((v) => !v)}>
+            {abierto ? 'Ocultar' : 'Ver informe'}
+          </button>
+        }
+      />
+
+      {!abierto && (
+        <p className="px-5 py-3 text-sm text-slate-500">
+          Qué día se pagó cada factura, con qué transferencia y con cuántos días de desfase
+          respecto de la emisión y del vencimiento. Se puede filtrar por mes y exportar.
+        </p>
+      )}
+
+      {abierto && (
+        <>
+          <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-5 py-3">
+            <select className="input w-auto" value={mes} onChange={(e) => setMes(e.target.value)}>
+              <option value="">Todos los meses</option>
+              {(meses.data ?? []).map((m) => (
+                <option key={m.mes} value={m.mes}>
+                  {nombreMes(m.mes)} ({m.cobros} cobros)
+                </option>
+              ))}
+            </select>
+
+            <div className="relative flex-1 sm:max-w-xs">
+              <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400" />
+              <input className="input pl-9" placeholder="Cliente o documento…"
+                value={buscar} onChange={(e) => setBuscar(e.target.value)} />
+            </div>
+
+            <span className="text-xs text-slate-500">
+              {filas.length} imputación(es) · {money(total)}
+              {promedio !== null && ` · ${promedio} días promedio desde la emisión`}
+            </span>
+
+            <button className="btn-secondary px-3 py-1.5 text-xs" onClick={exportar}
+              disabled={filas.length === 0}>
+              <Download className="h-3.5 w-3.5" /> CSV
+            </button>
+          </div>
+
+          {detalle.isLoading && <Skeleton className="m-5 h-40" />}
+          {detalle.isError && <div className="p-5"><ErrorState error={detalle.error} /></div>}
+
+          {!detalle.isLoading && filas.length === 0 && (
+            <EmptyState title="Sin pagos en este filtro"
+              hint="Prueba con otro mes o limpia la búsqueda." />
+          )}
+
+          {filas.length > 0 && (
+            <div className="max-h-[32rem] overflow-y-auto">
+              <TableWrap>
+                <thead className="sticky top-0 bg-slate-50">
+                  <tr>
+                    <th className="th">Fecha de pago</th>
+                    <th className="th">Cliente</th>
+                    <th className="th">Documento</th>
+                    <th className="th">Emitido</th>
+                    <th className="th">Vence</th>
+                    <th className="th text-right">Imputado</th>
+                    <th className="th text-right">Días</th>
+                    <th className="th">Forma de pago</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filas.map((d, i) => (
+                    <tr key={`${d.payment_id}-${d.documento ?? i}`} className="hover:bg-slate-50">
+                      <td className="td">
+                        <p className="font-medium text-navy-900">{dateShort(d.fecha_pago)}</p>
+                        <p className="text-xs text-slate-400">{d.pago_code}</p>
+                      </td>
+                      <td className="td font-medium text-slate-800">{d.cliente}</td>
+                      <td className="td">
+                        {d.documento ?? <span className="text-amber-600">sin imputar</span>}
+                      </td>
+                      <td className="td text-slate-500">{dateShort(d.emitido)}</td>
+                      <td className="td text-slate-500">{dateShort(d.vence)}</td>
+                      <td className="td text-right tabular-nums">
+                        {d.monto_imputado === null ? money(d.monto_pago) : money(d.monto_imputado)}
+                      </td>
+                      <td className="td text-right tabular-nums">
+                        {d.dias_desde_emision === null ? <span className="text-slate-300">—</span> : (
+                          <span title={d.dias_vs_vencimiento === null ? undefined
+                            : d.dias_vs_vencimiento > 0
+                              ? `${d.dias_vs_vencimiento} días después del vencimiento`
+                              : `${-d.dias_vs_vencimiento} días antes del vencimiento`}
+                            className={clsx('font-medium',
+                              (d.dias_vs_vencimiento ?? 0) > 0 ? 'text-amber-600' : 'text-emerald-600')}>
+                            {d.dias_desde_emision} d
+                          </span>
+                        )}
+                      </td>
+                      <td className="td text-xs text-slate-500">
+                        {PAYMENT_METHOD_LABEL[d.metodo as PaymentMethod] ?? d.metodo}
+                        {d.reference && <span className="block text-slate-400">ref {d.reference}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </TableWrap>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  )
+}
 
 // ---------------------------------------------------------------- pagos
 function PanelPagos({
@@ -442,6 +1049,8 @@ function PanelPagos({
   return (
     <div className="space-y-4">
       {error && <ErrorState error={error} />}
+
+      <InformeFechasPago />
 
       {sinImputar.length > 0 && (
         <Card>
@@ -900,14 +1509,15 @@ function Dato({ label, valor, tono }: { label: string; valor: string; tono?: 'bu
 // no se maneja con una lista plana.
 
 type Orden = 'emision' | 'vencimiento' | 'monto'
-type Filtro = 'todas' | 'vencidas' | 'graves' | 'por_vencer' | 'abonadas'
+type Filtro = 'todas' | 'vencidas' | 'graves' | 'por_vencer' | 'abonadas' | 'pagadas'
 
 const FILTRO_LABEL: Record<Filtro, string> = {
-  todas: 'Todas',
+  todas: 'Por cobrar',
   vencidas: 'Vencidas',
   graves: '+30 días',
   por_vencer: 'Por vencer',
   abonadas: 'Con abono',
+  pagadas: 'Ya pagadas',
 }
 
 /** Días que faltan para el vencimiento, o cuántos lleva vencida. */
@@ -935,9 +1545,12 @@ function Vencimiento({ doc }: { doc: CuentaPorCobrar }) {
 }
 
 function SelectorFacturas({
-  documentos, cargando, reparto, setReparto, disponible,
+  documentos, historial, cargando, reparto, setReparto, disponible,
 }: {
   documentos: CuentaPorCobrar[]
+  /** Todas las facturas del cliente, pagadas incluidas. Sirve para consultar
+   *  mientras se registra el cobro: el cliente suele preguntar por una que ya pagó. */
+  historial: FacturaConPago[]
   cargando: boolean
   reparto: Record<string, string>
   setReparto: (f: (r: Record<string, string>) => Record<string, string>) => void
@@ -946,11 +1559,26 @@ function SelectorFacturas({
   const [orden, setOrden] = useState<Orden>('emision')
   const [filtro, setFiltro] = useState<Filtro>('todas')
   const [buscar, setBuscar] = useState('')
+  const [mes, setMes] = useState('')
+
+  /** Meses en que este cliente tiene facturas, para no ofrecer meses vacíos. */
+  const mesesDisponibles = useMemo(() => {
+    const set = new Set<string>()
+    for (const d of documentos) set.add(d.issued_at.slice(0, 7))
+    for (const h of historial) set.add(h.mes_emision)
+    return [...set].sort().reverse()
+  }, [documentos, historial])
+
+  const pagadas = useMemo(
+    () => historial.filter((h) => h.payment_status === 'pagado'),
+    [historial],
+  )
 
   const visibles = useMemo(() => {
     const q = buscar.trim().toLowerCase()
     const filtradas = documentos.filter((d) => {
       if (q && !(d.doc_number ?? d.code).toLowerCase().includes(q)) return false
+      if (mes && d.issued_at.slice(0, 7) !== mes) return false
       if (filtro === 'vencidas') return d.dias_atraso > 0
       if (filtro === 'graves') return d.dias_atraso > 30
       if (filtro === 'por_vencer') return d.dias_atraso === 0
@@ -963,7 +1591,15 @@ function SelectorFacturas({
       monto: (a, b) => Number(b.saldo) - Number(a.saldo),
     }
     return [...filtradas].sort(orden_fn[orden])
-  }, [documentos, buscar, filtro, orden])
+  }, [documentos, buscar, filtro, orden, mes])
+
+  /** Las pagadas se muestran solo para consulta: no se les puede imputar nada. */
+  const pagadasVisibles = useMemo(() => {
+    const q = buscar.trim().toLowerCase()
+    return pagadas
+      .filter((h) => (!q || h.doc_number.toLowerCase().includes(q)) && (!mes || h.mes_emision === mes))
+      .sort((a, b) => (b.ultimo_pago ?? '').localeCompare(a.ultimo_pago ?? ''))
+  }, [pagadas, buscar, mes])
 
   const saldoVisible = visibles.reduce((a, d) => a + Number(d.saldo), 0)
   const seleccionadas = Object.keys(reparto).filter((k) => Number(reparto[k]) > 0).length
@@ -1001,11 +1637,17 @@ function SelectorFacturas({
             <option value="vencimiento">Por vencimiento</option>
             <option value="monto">Mayor saldo primero</option>
           </select>
+          <select className="input w-auto" value={mes} onChange={(e) => setMes(e.target.value)}>
+            <option value="">Todos los meses</option>
+            {mesesDisponibles.map((m) => (
+              <option key={m} value={m}>{nombreMes(m)}</option>
+            ))}
+          </select>
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
           {(Object.keys(FILTRO_LABEL) as Filtro[]).map((f) => {
-            const n = documentos.filter((d) =>
+            const n = f === 'pagadas' ? pagadas.length : documentos.filter((d) =>
               f === 'vencidas' ? d.dias_atraso > 0
               : f === 'graves' ? d.dias_atraso > 30
               : f === 'por_vencer' ? d.dias_atraso === 0
@@ -1022,29 +1664,59 @@ function SelectorFacturas({
           })}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <span className="text-slate-500">
-            {visibles.length} documento(s) · {money(saldoVisible)}
-          </span>
-          <button type="button" className="text-sea-600 hover:underline"
-            onClick={repartir} disabled={disponible <= 0}>
-            Repartir {money(disponible)} en este orden
-          </button>
-          <button type="button" className="text-sea-600 hover:underline" onClick={marcarTodas}>
-            Marcar todas
-          </button>
-          {seleccionadas > 0 && (
-            <button type="button" className="text-slate-500 hover:underline"
-              onClick={() => setReparto(() => ({}))}>
-              Limpiar ({seleccionadas})
+        {filtro === 'pagadas' ? (
+          <p className="text-xs text-slate-500">
+            {pagadasVisibles.length} factura(s) ya pagada(s){mes && ` en ${nombreMes(mes)}`}.
+            Se muestran solo para consultar la fecha de pago; no se les puede imputar nada.
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <span className="text-slate-500">
+              {visibles.length} documento(s) · {money(saldoVisible)}
+            </span>
+            <button type="button" className="text-sea-600 hover:underline"
+              onClick={repartir} disabled={disponible <= 0}>
+              Repartir {money(disponible)} en este orden
             </button>
-          )}
-        </div>
+            <button type="button" className="text-sea-600 hover:underline" onClick={marcarTodas}>
+              Marcar todas
+            </button>
+            {seleccionadas > 0 && (
+              <button type="button" className="text-slate-500 hover:underline"
+                onClick={() => setReparto(() => ({}))}>
+                Limpiar ({seleccionadas})
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="max-h-[22rem] overflow-y-auto">
         {cargando && <Skeleton className="m-4 h-24" />}
-        {!cargando && visibles.length === 0 && (
+
+        {!cargando && filtro === 'pagadas' && pagadasVisibles.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-slate-400">
+            Este cliente todavía no tiene facturas pagadas{mes && ` en ${nombreMes(mes)}`}
+          </p>
+        )}
+
+        {filtro === 'pagadas' && pagadasVisibles.map((h) => (
+          <div key={h.invoice_id}
+            className="flex items-center gap-3 border-b border-slate-50 px-4 py-2.5 opacity-90">
+            <Check className="h-4 w-4 shrink-0 text-emerald-500" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-slate-800">{h.doc_number}</p>
+              <p className="text-xs text-slate-400">
+                Emitida {dateShort(h.issued_at)} · pagada {dateShort(h.ultimo_pago)}
+                {h.dias_en_pagar !== null && ` · ${h.dias_en_pagar} días`}
+                {h.n_pagos > 1 && ` · ${h.n_pagos} pagos`}
+              </p>
+            </div>
+            <p className="shrink-0 text-sm tabular-nums text-slate-500">{money(h.total)}</p>
+          </div>
+        ))}
+
+        {!cargando && filtro !== 'pagadas' && visibles.length === 0 && (
           <p className="px-4 py-6 text-center text-sm text-slate-400">
             {documentos.length === 0
               ? 'Este cliente no tiene documentos pendientes'
@@ -1052,7 +1724,7 @@ function SelectorFacturas({
           </p>
         )}
 
-        {visibles.map((d) => {
+        {filtro !== 'pagadas' && visibles.map((d) => {
           const key = `${d.origen}:${d.ref_id}`
           const marcada = !!reparto[key]
           const parcial = Number(d.amount_paid) > 0
@@ -1098,6 +1770,59 @@ function SelectorFacturas({
           )
         })}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Una línea con cómo paga este cliente, para tenerla a la vista mientras se
+ * registra el cobro: si históricamente paga a 50 días y el plazo es 30, eso
+ * cambia la conversación que viene después.
+ */
+function ResumenPagoCliente({ customerId }: { customerId: string }) {
+  const c = useQuery({
+    queryKey: ['cob-comportamiento-cliente', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_comportamiento_pago_cliente').select('*')
+        .eq('customer_id', customerId).maybeSingle()
+      if (error) throw error
+      return data as ComportamientoPago | null
+    },
+  })
+
+  const d = c.data
+  if (!d || d.dias_promedio === null) return null
+
+  const exceso = d.exceso_sobre_plazo ?? 0
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs">
+      <span className="flex items-center gap-1.5 font-medium text-slate-600">
+        <Timer className="h-3.5 w-3.5" /> Cómo paga
+      </span>
+      <span className="text-slate-500">
+        Promedio <span className="font-semibold text-navy-900">{d.dias_promedio} días</span>
+        {' '}sobre {d.facturas_pagadas} facturas pagadas
+      </span>
+      <span className="text-slate-500">
+        Plazo pactado {d.plazo_pactado} d
+        {exceso > 0 && <span className="ml-1 font-medium text-amber-600">(+{exceso} d)</span>}
+        {exceso < 0 && <span className="ml-1 text-emerald-600">({exceso} d)</span>}
+      </span>
+      {d.dias_minimo !== null && (
+        <span className="text-slate-400">Entre {d.dias_minimo} y {d.dias_maximo} días</span>
+      )}
+      {d.pct_a_tiempo !== null && (
+        <span className={clsx('font-medium',
+          d.pct_a_tiempo >= 80 ? 'text-emerald-600'
+          : d.pct_a_tiempo >= 50 ? 'text-amber-600' : 'text-red-600')}>
+          {d.pct_a_tiempo}% dentro del plazo
+        </span>
+      )}
+      {d.ultimo_pago && (
+        <span className="text-slate-400">Último pago {dateShort(d.ultimo_pago)}</span>
+      )}
     </div>
   )
 }
@@ -1215,6 +1940,20 @@ function ModalCobrar({
     },
   })
 
+  // El historial completo del cliente. Se consulta acá mismo porque la
+  // conversación al registrar un pago casi siempre incluye "¿y la de marzo?".
+  const historial = useQuery({
+    queryKey: ['cob-historial-cliente', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_facturas_con_pago').select('*').eq('customer_id', customerId)
+        .order('issued_at', { ascending: false }).limit(2000)
+      if (error) throw error
+      return data as FacturaConPago[]
+    },
+  })
+
   const montoNum = Number(monto) || 0
   const imputado = Object.values(reparto).reduce((a, v) => a + (Number(v) || 0), 0)
   const resto = montoNum - imputado
@@ -1264,14 +2003,23 @@ function ModalCobrar({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block sm:col-span-2">
             <span className="label">Cliente</span>
+            {/* Se listan todos, no solo los que deben: a un cliente al día
+                igual hay que poder abrirle la ficha para revisar sus pagos. */}
             <select className="input" value={customerId}
               onChange={(e) => { setCustomerId(e.target.value); setReparto({}) }}>
               <option value="">Selecciona…</option>
-              {clientes.filter((c) => Number(c.deuda_total) > 0).map((c) => (
-                <option key={c.customer_id} value={c.customer_id}>
-                  {c.cliente} — debe {money(c.deuda_total)} en {c.documentos} doc.
-                </option>
-              ))}
+              <optgroup label="Con deuda">
+                {clientes.filter((c) => Number(c.deuda_total) > 0).map((c) => (
+                  <option key={c.customer_id} value={c.customer_id}>
+                    {c.cliente} — debe {money(c.deuda_total)} en {c.documentos} doc.
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Al día">
+                {clientes.filter((c) => Number(c.deuda_total) <= 0).map((c) => (
+                  <option key={c.customer_id} value={c.customer_id}>{c.cliente}</option>
+                ))}
+              </optgroup>
             </select>
           </label>
 
@@ -1307,7 +2055,9 @@ function ModalCobrar({
         {customerId && (
           <>
             <BarraImputacion monto={montoNum} imputado={imputado} />
-            <SelectorFacturas documentos={docs.data ?? []} cargando={docs.isLoading}
+            <ResumenPagoCliente customerId={customerId} />
+            <SelectorFacturas documentos={docs.data ?? []} historial={historial.data ?? []}
+              cargando={docs.isLoading}
               reparto={reparto} setReparto={setReparto}
               disponible={montoNum} />
           </>
@@ -1367,6 +2117,17 @@ function ModalImputar({
     },
   })
 
+  const historial = useQuery({
+    queryKey: ['cob-historial-cliente', pago.customer_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_facturas_con_pago').select('*').eq('customer_id', pago.customer_id)
+        .order('issued_at', { ascending: false }).limit(2000)
+      if (error) throw error
+      return data as FacturaConPago[]
+    },
+  })
+
   const imputado = Object.values(reparto).reduce((a, v) => a + (Number(v) || 0), 0)
   const resto = Number(pago.amount) - imputado
 
@@ -1410,7 +2171,8 @@ function ModalImputar({
 
         <BarraImputacion monto={Number(pago.amount)} imputado={imputado} />
 
-        <SelectorFacturas documentos={docs.data ?? []} cargando={docs.isLoading}
+        <SelectorFacturas documentos={docs.data ?? []} historial={historial.data ?? []}
+          cargando={docs.isLoading}
           reparto={reparto} setReparto={setReparto}
           disponible={Number(pago.amount)} />
 

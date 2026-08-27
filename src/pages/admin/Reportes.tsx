@@ -152,6 +152,112 @@ const REPORTES: Reporte[] = [
     },
   },
   {
+    id: 'fechas-de-pago',
+    titulo: 'Detalle de fechas de pago',
+    descripcion: 'Una fila por cada pago imputado: qué día entró, qué factura cubrió y con cuántos días de desfase.',
+    generar: async ({ desde, hasta }) => {
+      const { data, error } = await supabase
+        .from('v_pagos_detalle').select('*')
+        .gte('fecha_pago', desde)
+        .lte('fecha_pago', hasta)
+        .order('fecha_pago')
+      if (error) throw error
+      const filas: (string | number | null)[][] = [[
+        'Fecha de pago', 'Cobro', 'Cliente', 'RUT', 'Documento', 'Emitido', 'Vence',
+        'Total del documento', 'Monto imputado', 'Monto del cobro', 'Forma de pago',
+        'N° de operación', 'Días desde la emisión', 'Días vs. vencimiento', 'Destino', 'Nota',
+      ]]
+      for (const d of data as {
+        fecha_pago: string; pago_code: string; cliente: string; rut: string | null
+        documento: string | null; emitido: string | null; vence: string | null
+        total_documento: number | null; monto_imputado: number | null; monto_pago: number
+        metodo: string; reference: string | null; dias_desde_emision: number | null
+        dias_vs_vencimiento: number | null; destino: string; notes: string | null
+      }[]) {
+        filas.push([
+          d.fecha_pago, d.pago_code, d.cliente, d.rut, d.documento,
+          d.emitido, d.vence, d.total_documento, d.monto_imputado, d.monto_pago,
+          d.metodo, d.reference, d.dias_desde_emision, d.dias_vs_vencimiento,
+          d.destino, d.notes,
+        ])
+      }
+      return filas
+    },
+  },
+  {
+    id: 'comportamiento-pago',
+    titulo: 'Cuánto se demora en pagar cada cliente',
+    descripcion: 'Promedio, mediana y dispersión de días entre la emisión y el pago, contra el plazo pactado con cada uno.',
+    generar: async () => {
+      const { data, error } = await supabase
+        .from('v_comportamiento_pago_cliente').select('*')
+        .order('dias_promedio', { ascending: false, nullsFirst: false })
+      if (error) throw error
+      const filas: (string | number | null)[][] = [[
+        'Cliente', 'RUT', 'Plazo pactado', 'Facturas emitidas', 'Monto facturado',
+        'Facturas pagadas', 'Monto pagado', 'Días promedio', 'Días mediana',
+        'Días mínimo', 'Días máximo', 'Desviación', 'Promedio últimos 90 días',
+        'Exceso sobre el plazo', 'Pagadas a tiempo', 'Pagadas fuera de plazo', '% a tiempo',
+        'Facturas abiertas', 'Saldo abierto', 'Espera promedio', 'Espera máxima', 'Último pago',
+      ]]
+      for (const c of data as {
+        cliente: string; rut: string | null; plazo_pactado: number
+        facturas_totales: number; monto_total: number; facturas_pagadas: number
+        monto_pagado: number; dias_promedio: number | null; dias_mediana: number | null
+        dias_minimo: number | null; dias_maximo: number | null; dias_desviacion: number | null
+        dias_promedio_90d: number | null; exceso_sobre_plazo: number | null
+        a_tiempo: number; fuera_de_plazo: number; pct_a_tiempo: number | null
+        facturas_abiertas: number; saldo_abierto: number
+        espera_promedio: number | null; espera_maxima: number | null; ultimo_pago: string | null
+      }[]) {
+        filas.push([
+          c.cliente, c.rut, c.plazo_pactado, c.facturas_totales, c.monto_total,
+          c.facturas_pagadas, c.monto_pagado, c.dias_promedio,
+          c.dias_mediana === null ? null : Math.round(Number(c.dias_mediana)),
+          c.dias_minimo, c.dias_maximo, c.dias_desviacion, c.dias_promedio_90d,
+          c.exceso_sobre_plazo, c.a_tiempo, c.fuera_de_plazo, c.pct_a_tiempo,
+          c.facturas_abiertas, c.saldo_abierto, c.espera_promedio, c.espera_maxima, c.ultimo_pago,
+        ])
+      }
+      return filas
+    },
+  },
+  {
+    id: 'facturas-con-pago',
+    titulo: 'Facturas del período con su fecha de pago',
+    descripcion: 'Todas las facturas emitidas en el rango, pagadas y no pagadas, con el día en que se pagó cada una.',
+    generar: async ({ desde, hasta }) => {
+      const { data, error } = await supabase
+        .from('v_facturas_con_pago').select('*')
+        .gte('issued_at', desde)
+        .lte('issued_at', hasta)
+        .order('issued_at')
+        .order('doc_number')
+      if (error) throw error
+      const filas: (string | number | null)[][] = [[
+        'Documento', 'Tipo', 'Cliente', 'RUT', 'Emitida', 'Vence', 'Neto', 'IVA', 'Total',
+        'Pagado', 'Saldo', 'Estado', 'Primer pago', 'Último pago', 'N° de pagos',
+        'Forma de pago', 'N° de operación', 'Días en pagar', 'Días vs. plazo', 'Días esperando',
+      ]]
+      for (const f of data as {
+        doc_number: string; doc_type: string; cliente: string; rut: string | null
+        issued_at: string; due_date: string | null; net_amount: number; tax_amount: number
+        total: number; amount_paid: number; saldo: number; payment_status: string
+        primer_pago: string | null; ultimo_pago: string | null; n_pagos: number
+        metodos: string | null; referencias: string | null; dias_en_pagar: number | null
+        dias_vs_plazo: number | null; dias_esperando: number | null
+      }[]) {
+        filas.push([
+          f.doc_number, f.doc_type, f.cliente, f.rut, f.issued_at, f.due_date,
+          f.net_amount, f.tax_amount, f.total, f.amount_paid, f.saldo, f.payment_status,
+          f.primer_pago, f.ultimo_pago, f.n_pagos, f.metodos, f.referencias,
+          f.dias_en_pagar, f.dias_vs_plazo, f.dias_esperando,
+        ])
+      }
+      return filas
+    },
+  },
+  {
     id: 'mermas',
     titulo: 'Mermas y pérdidas',
     descripcion: 'Kilos y costo perdidos por motivo. El desecho de fileteo va aparte, con costo cero.',

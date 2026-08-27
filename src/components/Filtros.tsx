@@ -1,29 +1,65 @@
 import { useMemo } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
-import { rangoDe, type Periodo, type Preset } from '../lib/periodo'
+import { mesActual, nombreMes, rangoDe, rangoDeMes, type Periodo, type Preset } from '../lib/periodo'
 
 const ETIQUETA: Record<Preset, string> = {
   hoy: 'Hoy', ayer: 'Ayer', semana: 'Esta semana', semana_pasada: 'Semana pasada',
   ultimos7: 'Últimos 7 días', mes: 'Este mes', mes_pasado: 'Mes pasado',
-  ultimos30: 'Últimos 30 días', todo: 'Todo', personalizado: 'Personalizado',
+  ultimos30: 'Últimos 30 días', anio: 'Este año', mes_elegido: 'Elegir mes…',
+  todo: 'Todo', personalizado: 'Personalizado',
 }
 
-const ORDEN: Preset[] = ['hoy', 'ayer', 'ultimos7', 'semana', 'semana_pasada', 'mes', 'mes_pasado', 'ultimos30', 'todo']
+const ORDEN: Preset[] = [
+  'hoy', 'ayer', 'ultimos7', 'semana', 'semana_pasada',
+  'mes', 'mes_pasado', 'mes_elegido', 'ultimos30', 'anio', 'todo',
+]
 
+/**
+ * Rango de fechas de un listado. Aparte de los atajos, `mes_elegido` deja
+ * saltar a cualquier mes cerrado: revisar marzo en septiembre es lo normal
+ * cuando llega el contador, y con «mes pasado» solo se alcanzaba uno atrás.
+ */
 export function FiltroPeriodo({
   valor, onChange,
 }: { valor: Periodo; onChange: (p: Periodo) => void }) {
+  const mes = valor.mes ?? valor.desde?.slice(0, 7) ?? mesActual()
+
+  /** Mes anterior o siguiente sin abrir el selector: es el gesto más repetido. */
+  function correrMes(paso: number) {
+    const [a, m] = mes.split('-').map(Number)
+    const d = new Date(a, m - 1 + paso, 1)
+    onChange(rangoDeMes(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`))
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <select
         className="input w-auto"
         value={valor.preset}
-        onChange={(e) => onChange(rangoDe(e.target.value as Preset, valor.desde, valor.hasta))}
+        onChange={(e) => {
+          const p = e.target.value as Preset
+          onChange(p === 'mes_elegido' ? rangoDeMes(mes) : rangoDe(p, valor.desde, valor.hasta))
+        }}
       >
         {ORDEN.map((p) => <option key={p} value={p}>{ETIQUETA[p]}</option>)}
         <option value="personalizado">{ETIQUETA.personalizado}</option>
       </select>
+
+      {valor.preset === 'mes_elegido' && (
+        <div className="flex items-center gap-1">
+          <button type="button" className="btn-secondary px-2 py-1" onClick={() => correrMes(-1)}
+            aria-label="Mes anterior">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <input type="month" className="input w-auto" value={mes}
+            onChange={(e) => e.target.value && onChange(rangoDeMes(e.target.value))} />
+          <button type="button" className="btn-secondary px-2 py-1" onClick={() => correrMes(1)}
+            aria-label="Mes siguiente">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {valor.preset === 'personalizado' && (
         <>
@@ -35,7 +71,11 @@ export function FiltroPeriodo({
         </>
       )}
 
-      {valor.preset !== 'personalizado' && valor.desde && (
+      {valor.preset === 'mes_elegido' && (
+        <span className="text-xs font-medium text-slate-500 capitalize">{nombreMes(mes)}</span>
+      )}
+
+      {valor.preset !== 'personalizado' && valor.preset !== 'mes_elegido' && valor.desde && (
         <span className="text-xs text-slate-400">
           {valor.desde === valor.hasta ? valor.desde : `${valor.desde} a ${valor.hasta}`}
         </span>

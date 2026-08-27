@@ -394,3 +394,102 @@ export interface AvisoPago {
   created_at: string
   customers?: { name: string } | null
 }
+
+/**
+ * Una factura con su historia de pago, esté saldada o no. A diferencia de
+ * `CuentaPorCobrar` —que solo muestra deuda viva— acá la factura pagada
+ * sobrevive con la fecha en que se pagó, que es lo que se necesita para
+ * responder "¿qué día pagó esta?" y "¿cuánto se demoró?".
+ */
+export interface FacturaConPago {
+  invoice_id: string
+  code: string
+  doc_type: string
+  doc_number: string
+  customer_id: string
+  cliente: string
+  rut: string | null
+  payment_terms_days: number
+  issued_at: string
+  due_date: string | null
+  mes_emision: string
+  net_amount: number
+  tax_amount: number
+  total: number
+  amount_paid: number
+  saldo: number
+  payment_status: PaymentStatus
+  primer_pago: string | null
+  ultimo_pago: string | null
+  mes_pago: string | null
+  n_pagos: number
+  metodos: string | null
+  referencias: string | null
+  dias_en_pagar: number | null
+  dias_vs_plazo: number | null
+  dias_esperando: number | null
+  dias_atraso: number | null
+}
+
+/** Una línea del informe de fechas de pago: este día entró plata y cubrió este documento. */
+export interface PagoDetalle {
+  payment_id: string
+  pago_code: string
+  fecha_pago: string
+  mes_pago: string
+  metodo: string
+  reference: string | null
+  notes: string | null
+  monto_pago: number
+  customer_id: string
+  cliente: string
+  rut: string | null
+  monto_imputado: number | null
+  destino: 'factura' | 'pedido' | 'saldo_inicial' | 'sin_imputar'
+  documento: string | null
+  emitido: string | null
+  vence: string | null
+  total_documento: number | null
+  dias_desde_emision: number | null
+  dias_vs_vencimiento: number | null
+}
+
+/** Cuánto se demora un cliente en pagar, y con cuánta regularidad. */
+export interface ComportamientoPago {
+  customer_id: string
+  cliente: string
+  rut: string | null
+  plazo_pactado: number
+  facturas_totales: number
+  monto_total: number
+  primera_factura: string | null
+  ultima_factura: string | null
+  facturas_pagadas: number
+  monto_pagado: number
+  dias_promedio: number | null
+  dias_mediana: number | null
+  dias_minimo: number | null
+  dias_maximo: number | null
+  dias_desviacion: number | null
+  dias_promedio_90d: number | null
+  ultimo_pago: string | null
+  a_tiempo: number
+  fuera_de_plazo: number
+  pct_a_tiempo: number | null
+  facturas_abiertas: number
+  saldo_abierto: number
+  espera_maxima: number | null
+  espera_promedio: number | null
+  exceso_sobre_plazo: number | null
+}
+
+/** Un mes que tiene movimiento, para poblar los selectores sin ofrecer meses vacíos. */
+export interface MesActividad {
+  mes: string
+  facturas: number
+  venta: number
+  compras: number
+  costo_compras: number
+  cobros: number
+  cobrado: number
+}

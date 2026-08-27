@@ -74,7 +74,9 @@ export function Ventas() {
         .select('*, customers(id, name, comuna)')
         .order('issued_at', { ascending: false })
         .order('doc_number', { ascending: false })
-        .limit(1000)
+        // Un año completo pasa de mil documentos: con el tope anterior, elegir
+        // «todo» recortaba en silencio y los totales de la cabecera mentían.
+        .limit(5000)
       if (desdeFecha) q = q.gte('issued_at', desdeFecha)
       if (hastaFecha) q = q.lte('issued_at', hastaFecha)
       const { data, error } = await q
