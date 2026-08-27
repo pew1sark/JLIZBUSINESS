@@ -10,6 +10,7 @@ import { initials } from '../../lib/format'
 import { ROLE_LABEL } from '../../lib/constants'
 import { GlobalSearch } from '../GlobalSearch'
 import { NotificationBell } from '../NotificationBell'
+import { Logo } from '../ui'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -46,9 +47,7 @@ export function AdminLayout() {
   const sidebar = (
     <div className="flex h-full flex-col bg-navy-900 text-navy-100">
       <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sea-500 text-white">
-          <Fish className="h-5 w-5" />
-        </div>
+        <Logo className="h-10 w-10" ring />
         <div>
           <p className="text-sm font-semibold tracking-tight text-white">Pescadería Bilagay</p>
           <p className="text-[11px] text-navy-300">Pescado fresco</p>

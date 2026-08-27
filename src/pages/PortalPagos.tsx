@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
-  AlertCircle, Building2, Check, Clock, Fish, Loader2, Receipt, Send,
+  AlertCircle, Building2, Check, Clock, Loader2, Receipt, Send,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { supabase } from '../lib/supabase'
+import { Logo } from '../components/ui'
 import { dateShort, money } from '../lib/format'
 
 interface Documento {
@@ -80,9 +81,7 @@ export function PortalPagos() {
     <div className="min-h-screen bg-slate-100 pb-16">
       <header className="bg-navy-900 px-5 py-6 text-white">
         <div className="mx-auto flex max-w-2xl items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sea-500">
-            <Fish className="h-5 w-5" />
-          </div>
+          <Logo className="h-11 w-11" ring />
           <div>
             <p className="text-sm font-semibold tracking-tight">Pescadería Bilagay SpA</p>
             <p className="text-[11px] text-navy-300">Estado de cuenta</p>

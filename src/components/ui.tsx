@@ -1,6 +1,25 @@
 import type { ReactNode } from 'react'
-import { AlertCircle, Inbox, Loader2, X } from 'lucide-react'
+import { AlertCircle, ChevronRight, Inbox, Loader2, X } from 'lucide-react'
 import clsx from 'clsx'
+import { Link } from 'react-router-dom'
+
+/**
+ * El sello de la empresa. Se sirve desde `public/` en vez de inlinearse en el
+ * bundle: son 40 KB de trazados que el navegador cachea una vez y no vuelve a
+ * descargar en cada despliegue de la aplicación.
+ *
+ * El logo trae su propio anillo oscuro, así que sobre el azul de la barra
+ * lateral se le pone un aro claro (`ring`) para que no se funda con el fondo.
+ */
+export function Logo({ className, ring }: { className?: string; ring?: boolean }) {
+  return (
+    <img
+      src={`${import.meta.env.BASE_URL}logo.svg`}
+      alt="Bilagay · Pesca y Recolección"
+      className={clsx('shrink-0 rounded-full object-contain', ring && 'ring-2 ring-white/15', className)}
+    />
+  )
+}
 
 export function PageHeader({
   title, subtitle, actions,
@@ -29,14 +48,20 @@ export function CardHeader({ title, action }: { title: string; action?: ReactNod
   )
 }
 
+/**
+ * Un número del panel. Con `to`, la tarjeta entera lleva a la pantalla donde
+ * ese número se explica: ver "Vencido $4M" y no poder pinchar para saber de
+ * quién es obliga a buscarlo a mano en otra pantalla.
+ */
 export function StatCard({
-  label, value, hint, icon, tone = 'default',
+  label, value, hint, icon, tone = 'default', to,
 }: {
   label: string
   value: string
   hint?: string
   icon?: ReactNode
   tone?: 'default' | 'positive' | 'warning' | 'danger'
+  to?: string
 }) {
   const tones = {
     default: 'text-slate-900',
@@ -44,15 +69,27 @@ export function StatCard({
     warning: 'text-amber-600',
     danger: 'text-red-600',
   }
-  return (
-    <div className="card p-4">
+  const cuerpo = (
+    <>
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">{label}</p>
-        {icon && <span className="text-slate-300">{icon}</span>}
+        {icon && <span className="text-slate-300 group-hover:text-sea-500">{icon}</span>}
       </div>
       <p className={clsx('mt-2 text-2xl font-semibold tabular-nums', tones[tone])}>{value}</p>
       {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
-    </div>
+    </>
+  )
+
+  if (!to) return <div className="card p-4">{cuerpo}</div>
+
+  return (
+    <Link to={to}
+      className="card group block p-4 transition hover:border-sea-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-sea-400 focus-visible:outline-none">
+      {cuerpo}
+      <span className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-medium text-sea-600 opacity-0 transition group-hover:opacity-100">
+        Ver detalle <ChevronRight className="h-3 w-3" />
+      </span>
+    </Link>
   )
 }
 

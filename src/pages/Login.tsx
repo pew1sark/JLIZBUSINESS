@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Fish, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { Logo } from '../components/ui'
 
 type Mode = 'login' | 'signup' | 'reset'
 
@@ -47,9 +48,7 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center bg-navy-900 p-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-sea-500 text-white">
-            <Fish className="h-7 w-7" />
-          </div>
+          <Logo className="mb-3 h-20 w-20" ring />
           <h1 className="text-xl font-semibold text-white">Pescadería Bilagay</h1>
           <p className="mt-1 text-sm text-navy-300">Gestión de distribuidora de pescado fresco</p>
         </div>

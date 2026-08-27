@@ -13,7 +13,8 @@ import type {
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE } from '../../lib/constants'
 import { dateShort, dateTime, money, moneyShort } from '../../lib/format'
 import { descargarCsv } from '../../lib/csv'
-import { FiltroPeriodo, Paginador } from '../../components/Filtros'
+import { FiltroPeriodo, Paginador, ThOrden } from '../../components/Filtros'
+import { ordenar, useOrden } from '../../lib/orden'
 import { nombreMes, rangoDe, type Periodo } from '../../lib/periodo'
 import {
   Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap,
@@ -28,6 +29,22 @@ const TRAMO: Record<string, { label: string; clase: string }> = {
 }
 
 type Pestana = 'clientes' | 'facturas' | 'documentos' | 'comportamiento' | 'pagos' | 'avisos'
+
+type OrdenFactura = { campo: ColFactura; dir: 'asc' | 'desc' }
+type ColComport =
+  | 'cliente' | 'dias_promedio' | 'mediana' | 'exceso' | 'a_tiempo'
+  | 'ultimos90' | 'abiertas' | 'ultima_factura' | 'ultimo_pago' | 'facturado'
+type OrdenComport = { campo: ColComport; dir: 'asc' | 'desc' }
+
+type FiltroComport = 'todos' | 'con_deuda' | 'al_dia' | 'fuera_plazo' | 'empeorando'
+
+const FILTRO_COMPORT: Record<FiltroComport, string> = {
+  todos: 'Todos',
+  con_deuda: 'Con deuda abierta',
+  al_dia: 'Al día',
+  fuera_plazo: 'Se pasan del plazo',
+  empeorando: 'Empeorando',
+}
 
 export function Cobranza() {
   const qc = useQueryClient()
@@ -44,6 +61,10 @@ export function Cobranza() {
   // contra "qué me pagaron en marzo") y las dos se hacen igual de seguido.
   const [ejeFecha, setEjeFecha] = useState<'emision' | 'pago'>('emision')
   const [estadoFactura, setEstadoFactura] = useState<'todas' | 'pagadas' | 'impagas'>('todas')
+  const [clienteFactura, setClienteFactura] = useState('')
+  const ordFactura = useOrden<ColFactura>('emitida')
+  const ordComport = useOrden<ColComport>('dias_promedio')
+  const [filtroComport, setFiltroComport] = useState<FiltroComport>('todos')
 
   const clientes = useQuery({
     queryKey: ['cob-clientes'],
@@ -154,22 +175,36 @@ export function Cobranza() {
 
   // Las facturas se filtran por el eje que se haya elegido: la fecha de
   // emisión o la del pago. Con eje "pago", lo que nunca se pagó no aparece.
-  const facturasFiltradas = useMemo(() => (facturas.data ?? []).filter((f) => {
-    if (estadoFactura === 'pagadas' && f.payment_status !== 'pagado') return false
-    if (estadoFactura === 'impagas' && f.payment_status === 'pagado') return false
+  const facturasFiltradas = useMemo(() => {
+    const filtradas = (facturas.data ?? []).filter((f) => {
+      if (estadoFactura === 'pagadas' && f.payment_status !== 'pagado') return false
+      if (estadoFactura === 'impagas' && f.payment_status === 'pagado') return false
+      if (clienteFactura && f.customer_id !== clienteFactura) return false
 
-    const hayRango = !!(periodo.desde || periodo.hasta)
-    const fecha = ejeFecha === 'pago' ? f.ultimo_pago : f.issued_at
-    // Con el eje en la fecha de pago, una factura sin pagar no tiene fecha que
-    // comparar: cae fuera de cualquier rango, pero sigue apareciendo si no hay rango.
-    if (hayRango) {
-      if (!fecha) return false
-      if (periodo.desde && fecha < periodo.desde) return false
-      if (periodo.hasta && fecha > periodo.hasta) return false
-    }
+      const hayRango = !!(periodo.desde || periodo.hasta)
+      const fecha = ejeFecha === 'pago' ? f.ultimo_pago : f.issued_at
+      // Con el eje en la fecha de pago, una factura sin pagar no tiene fecha que
+      // comparar: cae fuera de cualquier rango, pero sigue apareciendo si no hay rango.
+      if (hayRango) {
+        if (!fecha) return false
+        if (periodo.desde && fecha < periodo.desde) return false
+        if (periodo.hasta && fecha > periodo.hasta) return false
+      }
 
-    return !q || f.cliente.toLowerCase().includes(q) || f.doc_number.toLowerCase().includes(q)
-  }), [facturas.data, estadoFactura, ejeFecha, periodo.desde, periodo.hasta, q])
+      return !q || f.cliente.toLowerCase().includes(q) || f.doc_number.toLowerCase().includes(q)
+    })
+    return ordenar(filtradas, ordFactura.orden, (f, c) => ({
+      doc: f.doc_number,
+      cliente: f.cliente,
+      emitida: f.issued_at,
+      vence: f.due_date,
+      total: Number(f.total),
+      saldo: Number(f.saldo),
+      pago: f.ultimo_pago,
+      dias: f.dias_en_pagar ?? f.dias_esperando,
+      estado: f.payment_status,
+    })[c])
+  }, [facturas.data, estadoFactura, clienteFactura, ejeFecha, periodo.desde, periodo.hasta, q, ordFactura.orden])
 
   const resumenFacturas = useMemo(() => {
     const f = facturasFiltradas
@@ -184,9 +219,40 @@ export function Cobranza() {
     }
   }, [facturasFiltradas])
 
-  const comportamientoFiltrado = (comportamiento.data ?? [])
-    .filter((c) => c.facturas_totales > 0)
-    .filter((c) => !q || c.cliente.toLowerCase().includes(q) || (c.rut ?? '').includes(q))
+  const comportamientoFiltrado = useMemo(() => {
+    const base = (comportamiento.data ?? [])
+      .filter((c) => c.facturas_totales > 0)
+      .filter((c) => !q || c.cliente.toLowerCase().includes(q) || (c.rut ?? '').includes(q))
+      .filter((c) => {
+        if (filtroComport === 'con_deuda')  return c.facturas_abiertas > 0
+        if (filtroComport === 'fuera_plazo') return (c.exceso_sobre_plazo ?? 0) > 0
+        if (filtroComport === 'al_dia')     return c.facturas_abiertas === 0
+        if (filtroComport === 'empeorando') {
+          return c.dias_promedio_90d !== null && c.dias_promedio !== null
+            && c.dias_promedio_90d - c.dias_promedio >= 3
+        }
+        return true
+      })
+    return ordenar(base, ordComport.orden, (c, k) => ({
+      cliente: c.cliente,
+      dias_promedio: c.dias_promedio,
+      mediana: c.dias_mediana === null ? null : Number(c.dias_mediana),
+      exceso: c.exceso_sobre_plazo,
+      a_tiempo: c.pct_a_tiempo,
+      ultimos90: c.dias_promedio_90d,
+      abiertas: Number(c.saldo_abierto),
+      ultima_factura: c.ultima_factura,
+      ultimo_pago: c.ultimo_pago,
+      facturado: Number(c.monto_total),
+    })[k])
+  }, [comportamiento.data, q, filtroComport, ordComport.orden])
+
+  /** Clientes que aparecen en las facturas, para el filtro por cliente. */
+  const clientesDeFacturas = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const f of facturas.data ?? []) m.set(f.customer_id, f.cliente)
+    return [...m].sort((a, b) => a[1].localeCompare(b[1], 'es'))
+  }, [facturas.data])
 
   useEffect(() => { setPagina(0) }, [buscar, periodo.desde, periodo.hasta, pestana, ejeFecha, estadoFactura])
 
@@ -354,6 +420,14 @@ export function Cobranza() {
             ))}
           </div>
 
+          <select className="input w-auto py-1 text-xs" value={clienteFactura}
+            onChange={(e) => setClienteFactura(e.target.value)}>
+            <option value="">Todos los clientes</option>
+            {clientesDeFacturas.map(([id, nombre]) => (
+              <option key={id} value={id}>{nombre}</option>
+            ))}
+          </select>
+
           <span className="ml-auto text-xs text-slate-500">
             {money(resumenFacturas.total)} facturado · {money(resumenFacturas.cobrado)} cobrado
             {resumenFacturas.saldo > 0 && <> · <span className="font-medium text-amber-600">{money(resumenFacturas.saldo)} por cobrar</span></>}
@@ -384,7 +458,7 @@ export function Cobranza() {
       {pestana === 'facturas' && (
         <>
           <TablaFacturas filas={facturasPagina} cargando={facturas.isLoading}
-            ejeFecha={ejeFecha} />
+            ejeFecha={ejeFecha} orden={ordFactura.orden} onOrden={ordFactura.cambiar} />
           {facturasFiltradas.length > 0 && (
             <div className="card mt-3">
               <Paginador total={facturasFiltradas.length} pagina={pagina} porPagina={porPagina}
@@ -395,8 +469,25 @@ export function Cobranza() {
       )}
 
       {pestana === 'comportamiento' && (
-        <TablaComportamiento filas={comportamientoFiltrado} cargando={comportamiento.isLoading}
-          onCartola={setCartola} />
+        <>
+          <div className="mb-3 flex flex-wrap items-center gap-1">
+            {(Object.keys(FILTRO_COMPORT) as FiltroComport[]).map((f) => (
+              <button key={f} onClick={() => setFiltroComport(f)}
+                className={clsx('rounded-full px-3 py-1 text-xs font-medium',
+                  filtroComport === f ? 'bg-navy-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>
+                {FILTRO_COMPORT[f]}
+              </button>
+            ))}
+            <span className="ml-2 text-xs text-slate-400">
+              {comportamientoFiltrado.length} cliente(s) · toca un encabezado para ordenar
+            </span>
+          </div>
+          <TablaComportamiento filas={comportamientoFiltrado} cargando={comportamiento.isLoading}
+            onCartola={setCartola} orden={ordComport.orden} onOrden={ordComport.cambiar}
+            onVerFacturas={(id) => {
+              setClienteFactura(id); setEstadoFactura('todas'); setPestana('facturas')
+            }} />
+        </>
       )}
 
       {pestana === 'pagos' && (
@@ -576,12 +667,16 @@ const etiquetaDoc = (t: string) =>
  * pagó cada una. La tabla de arriba (`TablaDocumentos`) solo muestra deuda
  * viva; ésta es la que sirve para revisar un mes ya cerrado.
  */
+type ColFactura = 'doc' | 'cliente' | 'emitida' | 'vence' | 'total' | 'saldo' | 'pago' | 'dias' | 'estado'
+
 function TablaFacturas({
-  filas, cargando, ejeFecha,
+  filas, cargando, ejeFecha, orden, onOrden,
 }: {
   filas: FacturaConPago[]
   cargando: boolean
   ejeFecha: 'emision' | 'pago'
+  orden: OrdenFactura
+  onOrden: (c: ColFactura, d?: 'asc' | 'desc') => void
 }) {
   if (cargando) return <Card><Skeleton className="h-64" /></Card>
   if (filas.length === 0) {
@@ -600,15 +695,15 @@ function TablaFacturas({
     <TableWrap>
       <thead className="bg-slate-50">
         <tr>
-          <th className="th">Documento</th>
-          <th className="th">Cliente</th>
-          <th className="th">Emitida</th>
-          <th className="th">Vence</th>
-          <th className="th text-right">Total</th>
-          <th className="th text-right">Saldo</th>
-          <th className="th">Fecha de pago</th>
-          <th className="th text-right">Días</th>
-          <th className="th">Estado</th>
+          <ThOrden campo="doc" orden={orden} onOrden={onOrden}>Documento</ThOrden>
+          <ThOrden campo="cliente" orden={orden} onOrden={onOrden} porDefecto="asc">Cliente</ThOrden>
+          <ThOrden campo="emitida" orden={orden} onOrden={onOrden}>Emitida</ThOrden>
+          <ThOrden campo="vence" orden={orden} onOrden={onOrden}>Vence</ThOrden>
+          <ThOrden campo="total" orden={orden} onOrden={onOrden} className="text-right">Total</ThOrden>
+          <ThOrden campo="saldo" orden={orden} onOrden={onOrden} className="text-right">Saldo</ThOrden>
+          <ThOrden campo="pago" orden={orden} onOrden={onOrden}>Fecha de pago</ThOrden>
+          <ThOrden campo="dias" orden={orden} onOrden={onOrden} className="text-right">Días</ThOrden>
+          <ThOrden campo="estado" orden={orden} onOrden={onOrden} porDefecto="asc">Estado</ThOrden>
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
@@ -696,11 +791,14 @@ function DiasEnPagar({ factura: f }: { factura: FacturaConPago }) {
  * con el que se puede planificar; el mismo promedio con desviación de 25, no.
  */
 function TablaComportamiento({
-  filas, cargando, onCartola,
+  filas, cargando, onCartola, orden, onOrden, onVerFacturas,
 }: {
   filas: ComportamientoPago[]
   cargando: boolean
   onCartola: (id: string) => void
+  orden: OrdenComport
+  onOrden: (c: ColComport, d?: 'asc' | 'desc') => void
+  onVerFacturas: (customerId: string) => void
 }) {
   if (cargando) return <Card><Skeleton className="h-64" /></Card>
   if (filas.length === 0) {
@@ -732,15 +830,18 @@ function TablaComportamiento({
       <TableWrap>
         <thead className="bg-slate-50">
           <tr>
-            <th className="th">Cliente</th>
+            <ThOrden campo="cliente" orden={orden} onOrden={onOrden} porDefecto="asc">Cliente</ThOrden>
             <th className="th text-right">Plazo</th>
-            <th className="th text-right">Días promedio</th>
-            <th className="th text-right">Mediana</th>
+            <ThOrden campo="dias_promedio" orden={orden} onOrden={onOrden} className="text-right">Días promedio</ThOrden>
+            <ThOrden campo="mediana" orden={orden} onOrden={onOrden} className="text-right">Mediana</ThOrden>
             <th className="th text-right">Rango</th>
-            <th className="th text-right">vs. plazo</th>
-            <th className="th text-right">A tiempo</th>
-            <th className="th text-right">Últimos 90 d</th>
-            <th className="th text-right">Abiertas</th>
+            <ThOrden campo="exceso" orden={orden} onOrden={onOrden} className="text-right">vs. plazo</ThOrden>
+            <ThOrden campo="a_tiempo" orden={orden} onOrden={onOrden} className="text-right">A tiempo</ThOrden>
+            <ThOrden campo="ultimos90" orden={orden} onOrden={onOrden} className="text-right">Últimos 90 d</ThOrden>
+            <ThOrden campo="ultima_factura" orden={orden} onOrden={onOrden}>Última factura</ThOrden>
+            <ThOrden campo="ultimo_pago" orden={orden} onOrden={onOrden}>Último pago</ThOrden>
+            <ThOrden campo="facturado" orden={orden} onOrden={onOrden} className="text-right">Facturado</ThOrden>
+            <ThOrden campo="abiertas" orden={orden} onOrden={onOrden} className="text-right">Abiertas</ThOrden>
             <th className="th"></th>
           </tr>
         </thead>
@@ -752,10 +853,14 @@ function TablaComportamiento({
             return (
               <tr key={c.customer_id} className="hover:bg-slate-50">
                 <td className="td">
-                  <p className="font-medium text-slate-800">{c.cliente}</p>
+                  <button className="text-left font-medium text-slate-800 hover:text-sea-600 hover:underline"
+                    onClick={() => onVerFacturas(c.customer_id)}
+                    title="Ver las facturas de este cliente">
+                    {c.cliente}
+                  </button>
                   <p className="text-xs text-slate-400">
                     {c.facturas_pagadas} de {c.facturas_totales} facturas pagadas
-                    {c.ultimo_pago && ` · último pago ${dateShort(c.ultimo_pago)}`}
+                    {c.rut && ` · ${c.rut}`}
                   </p>
                 </td>
                 <td className="td text-right tabular-nums text-slate-500">{c.plazo_pactado} d</td>
@@ -801,6 +906,21 @@ function TablaComportamiento({
                       )}
                     </span>
                   )}
+                </td>
+                <td className="td text-slate-500">
+                  {dateShort(c.ultima_factura)}
+                  {c.primera_factura && (
+                    <span className="block text-xs text-slate-400">
+                      desde {dateShort(c.primera_factura)}
+                    </span>
+                  )}
+                </td>
+                <td className="td text-slate-500">
+                  {c.ultimo_pago ? dateShort(c.ultimo_pago) : <span className="text-slate-300">nunca</span>}
+                </td>
+                <td className="td text-right">
+                  <p className="tabular-nums text-slate-700">{moneyShort(c.monto_total)}</p>
+                  <p className="text-xs text-slate-400">{c.facturas_totales} doc.</p>
                 </td>
                 <td className="td text-right">
                   {c.facturas_abiertas === 0

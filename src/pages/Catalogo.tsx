@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { AlertCircle, Check, Fish, Loader2, Plus, Trash2 } from 'lucide-react'
+import { AlertCircle, Check, Loader2, Plus, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { supabase } from '../lib/supabase'
+import { Logo } from '../components/ui'
 import { CAMPOS_FIJOS, CAMPOS_VIAJE, SECCIONES, type Campo, type Seccion } from '../lib/intake'
 import { money } from '../lib/format'
 
@@ -115,9 +116,7 @@ export function Catalogo() {
       <header className="safe-top sticky top-0 z-20 border-b border-navy-800 bg-navy-900 text-white">
         <div className="mx-auto max-w-5xl px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sea-500">
-              <Fish className="h-5 w-5" />
-            </div>
+            <Logo className="h-10 w-10" ring />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">Catálogo y costos</p>
               <p className="truncate text-[11px] text-navy-300">{estado.business_name}</p>

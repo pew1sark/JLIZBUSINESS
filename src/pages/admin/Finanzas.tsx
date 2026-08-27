@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertTriangle, Download, MessageCircle, Search, TrendingDown, TrendingUp, Wallet,
+  AlertTriangle, Download, FileText, MessageCircle, Search, TrendingDown, TrendingUp, Wallet,
 } from 'lucide-react'
+import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
 import type { PaymentMethod } from '../../lib/types'
 import { PAYMENT_METHOD_LABEL } from '../../lib/constants'
@@ -48,14 +49,25 @@ interface Cobrar {
 }
 
 interface Pagar {
-  origen: 'compra' | 'saldo_inicial'
+  origen: 'compra' | 'nota_credito' | 'saldo_inicial'
   ref_id: string
   purchase_id: string | null
   code: string
   proveedor: string
   issued_at: string
+  due_date: string | null
   saldo: number
+  /** Bruto del documento: es lo que se le paga al proveedor, con IVA. */
   total: number
+  /** Neto de la mercadería, que es la base del costeo. No es lo que se paga. */
+  neto_mercaderia: number
+  net_amount: number | null
+  exempt_amount: number
+  tax_amount: number
+  invoice_number: string | null
+  document_url: string | null
+  dte_type: number | null
+  amount_paid: number
   dias_atraso: number
 }
 
@@ -68,6 +80,13 @@ interface Margen {
   margen: number
   margen_pct: number
   pedidos?: number
+}
+
+/** Tipos de documento tributario que llegan del SII vía Bsale. */
+const DTE_LABEL: Record<number, string> = {
+  33: 'Factura afecta',
+  34: 'Factura exenta',
+  61: 'Nota de crédito',
 }
 
 const TRAMO: Record<Cobrar['tramo'], { label: string; clase: string }> = {
@@ -149,6 +168,17 @@ export function Finanzas() {
     })
   }, [porPagar.data, buscar, desde, hasta])
 
+  // El neto de mercadería no es lo que se paga: hay que sumarle el IVA y lo que
+  // viene en la misma factura sin ser mercadería. Los tres números juntos
+  // explican de dónde sale el total, que es la pregunta al pagar.
+  const totalesPagar = useMemo(() => {
+    const p = pagarFiltrado
+    const neto = p.reduce((a, x) => a + Number(x.neto_mercaderia ?? 0), 0)
+    const iva = p.reduce((a, x) => a + Number(x.tax_amount ?? 0), 0)
+    const bruto = p.reduce((a, x) => a + Number(x.total), 0)
+    return { neto, iva, bruto, otros: bruto - iva - neto }
+  }, [pagarFiltrado])
+
   function refrescar() {
     qc.invalidateQueries({ queryKey: ['finance-kpis'] })
     qc.invalidateQueries({ queryKey: ['cuentas-cobrar'] })
@@ -173,6 +203,24 @@ export function Finanzas() {
         String(c.saldo), String(c.dias_atraso), c.invoice_number ?? ''])
     }
     descargarCsv(filas, 'cuentas-por-cobrar')
+  }
+
+  function exportarPagos() {
+    const filas: (string | number)[][] = [[
+      'Proveedor', 'Documento', 'N° de factura', 'Tipo', 'Fecha', 'Vence',
+      'Neto de mercadería', 'Neto afecto', 'Exento', 'IVA', 'Total del documento',
+      'Pagado', 'Saldo', 'Días de atraso', 'Enlace al documento',
+    ]]
+    for (const p of pagarFiltrado) {
+      filas.push([
+        p.proveedor, p.code, p.invoice_number ?? '',
+        p.origen === 'nota_credito' ? 'Nota de crédito' : DTE_LABEL[p.dte_type ?? 0] ?? '',
+        p.issued_at, p.due_date ?? '',
+        p.neto_mercaderia, p.net_amount ?? '', p.exempt_amount, p.tax_amount, p.total,
+        p.amount_paid, p.saldo, p.dias_atraso, p.document_url ?? '',
+      ])
+    }
+    descargarCsv(filas, `cuentas-por-pagar-${periodo.desde ?? 'todo'}`)
   }
 
   return (
@@ -289,6 +337,11 @@ export function Finanzas() {
               ? `${cobrarFiltrado.length} de ${porCobrar.data?.length ?? 0}`
               : `${pagarFiltrado.length} de ${porPagar.data?.length ?? 0}`}
           </span>
+          {pestana === 'pagos' && (
+            <button onClick={exportarPagos} className="btn-secondary ml-auto">
+              <Download className="h-4 w-4" /> Exportar CSV
+            </button>
+          )}
         </div>
       )}
 
@@ -369,47 +422,98 @@ export function Finanzas() {
             <Card><EmptyState title="No hay compras pendientes de pago" /></Card>
           )}
           {!!pagarFiltrado.length && (
-            <TableWrap>
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="th">Proveedor</th>
-                  <th className="th">Compra</th>
-                  <th className="th">Fecha</th>
-                  <th className="th">Total</th>
-                  <th className="th">Saldo</th>
-                  <th className="th">Atraso</th>
-                  <th className="th"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {pagarFiltrado.map((p) => (
-                  <tr key={p.ref_id} className="hover:bg-slate-50">
-                    <td className="td font-medium text-slate-900">{p.proveedor}</td>
-                    <td className="td">
-                      <p className="font-mono text-xs">{p.code}</p>
-                      {p.origen === 'saldo_inicial' && (
-                        <span className="badge bg-slate-100 text-slate-500">saldo anterior</span>
-                      )}
-                    </td>
-                    <td className="td text-slate-500">{dateShort(p.issued_at)}</td>
-                    <td className="td tabular-nums text-slate-500">{money(p.total)}</td>
-                    <td className="td tabular-nums font-medium">{money(p.saldo)}</td>
-                    <td className="td">
-                      {p.dias_atraso > 0 ? (
-                        <span className="badge bg-red-100 text-red-700">{p.dias_atraso} días</span>
-                      ) : (
-                        <span className="badge bg-emerald-100 text-emerald-700">Al día</span>
-                      )}
-                    </td>
-                    <td className="td text-right">
-                      <button onClick={() => setPagar(p)} className="btn-secondary px-3 py-1.5 text-xs">
-                        Registrar pago
-                      </button>
-                    </td>
+            <>
+              <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <StatCard label="Neto de mercadería" value={moneyShort(totalesPagar.neto)}
+                  hint="Es el costo, no lo que se paga" />
+                <StatCard label="Otros conceptos" value={moneyShort(totalesPagar.otros)}
+                  hint="Peajes, combustible y servicios de la misma factura" />
+                <StatCard label="IVA" value={moneyShort(totalesPagar.iva)}
+                  hint="Crédito fiscal del período" />
+                <StatCard label="Total a pagar" value={moneyShort(totalesPagar.bruto)}
+                  tone="warning" hint={`${pagarFiltrado.length} documentos`} />
+              </div>
+
+              <TableWrap>
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="th">Proveedor</th>
+                    <th className="th">Documento</th>
+                    <th className="th">Fecha</th>
+                    <th className="th text-right">Neto</th>
+                    <th className="th text-right">Exento</th>
+                    <th className="th text-right">IVA</th>
+                    <th className="th text-right">Total</th>
+                    <th className="th text-right">Saldo</th>
+                    <th className="th">Atraso</th>
+                    <th className="th"></th>
                   </tr>
-                ))}
-              </tbody>
-            </TableWrap>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {pagarFiltrado.map((p) => {
+                    const nc = p.origen === 'nota_credito'
+                    return (
+                      <tr key={p.ref_id} className={clsx('hover:bg-slate-50', nc && 'bg-emerald-50/40')}>
+                        <td className="td font-medium text-slate-900">{p.proveedor}</td>
+                        <td className="td">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs">{p.invoice_number ?? p.code}</span>
+                            {p.document_url && (
+                              <a href={p.document_url} target="_blank" rel="noreferrer"
+                                title="Abrir la factura del proveedor"
+                                className="text-sea-600 hover:text-sea-700"
+                                onClick={(e) => e.stopPropagation()}>
+                                <FileText className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-400">
+                            {nc ? 'Nota de crédito'
+                              : p.origen === 'saldo_inicial' ? 'Saldo anterior'
+                              : DTE_LABEL[p.dte_type ?? 0] ?? p.code}
+                          </p>
+                        </td>
+                        <td className="td text-slate-500">{dateShort(p.issued_at)}</td>
+                        <td className="td text-right tabular-nums text-slate-500">
+                          {p.net_amount === null ? '—' : money(p.net_amount)}
+                        </td>
+                        <td className="td text-right tabular-nums text-slate-400">
+                          {Number(p.exempt_amount) === 0 ? '—' : money(p.exempt_amount)}
+                        </td>
+                        <td className="td text-right tabular-nums text-slate-500">
+                          {Number(p.tax_amount) === 0 ? '—' : money(p.tax_amount)}
+                        </td>
+                        <td className={clsx('td text-right font-medium tabular-nums',
+                          nc ? 'text-emerald-600' : 'text-slate-800')}>
+                          {money(p.total)}
+                        </td>
+                        <td className="td text-right font-medium tabular-nums">{money(p.saldo)}</td>
+                        <td className="td">
+                          {nc ? <span className="badge bg-emerald-100 text-emerald-700">a favor</span>
+                            : p.dias_atraso > 0
+                              ? <span className="badge bg-red-100 text-red-700">{p.dias_atraso} días</span>
+                              : <span className="badge bg-emerald-100 text-emerald-700">Al día</span>}
+                        </td>
+                        <td className="td text-right">
+                          {!nc && (
+                            <button onClick={() => setPagar(p)} className="btn-secondary px-3 py-1.5 text-xs">
+                              Registrar pago
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </TableWrap>
+
+              <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                El <span className="font-medium">total</span> es el bruto del documento: es lo que se le
+                transfiere al proveedor. El <span className="font-medium">neto de mercadería</span> es la
+                base del costo del pescado y no incluye el IVA ni los conceptos que vienen en la misma
+                factura sin ser mercadería.
+              </p>
+            </>
           )}
         </>
       )}
@@ -615,29 +719,68 @@ function CobroModal({
   )
 }
 
+/**
+ * Registrar un pago a proveedor. Antes solo pedía monto, método y referencia,
+ * y la fecha quedaba en la de hoy: un pago hecho el viernes y cargado el lunes
+ * descuadraba contra la cartola del banco. Ahora pide la fecha real y muestra
+ * de qué está compuesto el total, que es lo que se revisa antes de transferir.
+ */
 function PagoModal({
   pagar, onClose, onListo,
 }: { pagar: Pagar | null; onClose: () => void; onListo: () => void }) {
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState<PaymentMethod>('transferencia')
   const [referencia, setReferencia] = useState('')
+  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10))
+  const [notas, setNotas] = useState('')
+
+  // Al abrir el modal con otra compra, la fecha vuelve a hoy y se limpia
+  // lo escrito: arrastrar el monto de la compra anterior es un error caro.
+  const refAnterior = useRef<string | null>(null)
+  useEffect(() => {
+    if (pagar && pagar.ref_id !== refAnterior.current) {
+      refAnterior.current = pagar.ref_id
+      setMonto(''); setReferencia(''); setNotas('')
+      setFecha(new Date().toISOString().slice(0, 10))
+    }
+  }, [pagar])
+
+  const pagos = useQuery({
+    queryKey: ['pagos-de-compra', pagar?.purchase_id],
+    enabled: !!pagar?.purchase_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payments')
+        .select('id, code, amount, method, paid_at, reference, notes')
+        .eq('purchase_id', pagar!.purchase_id).eq('direction', 'pago')
+        .order('paid_at', { ascending: false })
+      if (error) throw error
+      return data as { id: string; code: string; amount: number; method: PaymentMethod
+        paid_at: string; reference: string | null; notes: string | null }[]
+    },
+  })
+
+  const montoNum = Number(monto) || 0
+  const saldo = Number(pagar?.saldo ?? 0)
+  const excede = montoNum > saldo + 0.5
 
   const guardar = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.rpc('register_payment_out', {
         _origen: pagar!.origen,
         _ref_id: pagar!.ref_id,
-        _amount: Number(monto) || pagar!.saldo,
+        _amount: montoNum || saldo,
         _method: metodo,
         _reference: referencia.trim() || null,
+        _paid_at: new Date(`${fecha}T12:00:00`).toISOString(),
+        _notes: notas.trim() || null,
       })
       if (error) throw error
     },
     onSuccess: () => {
       onListo()
       onClose()
-      setMonto('')
-      setReferencia('')
+      setMonto(''); setReferencia(''); setNotas('')
     },
   })
 
@@ -645,40 +788,145 @@ function PagoModal({
     <Modal
       open={!!pagar}
       onClose={onClose}
+      wide
       title={`Pago a ${pagar?.proveedor ?? ''}`}
       footer={
         <>
           <button onClick={onClose} className="btn-secondary">Cancelar</button>
-          <button onClick={() => guardar.mutate()} disabled={guardar.isPending} className="btn-primary">
-            Registrar pago
+          <button onClick={() => guardar.mutate()}
+            disabled={guardar.isPending || excede || (montoNum <= 0 && saldo <= 0)}
+            className="btn-primary">
+            {guardar.isPending ? 'Guardando…' : `Registrar ${money(montoNum || saldo)}`}
           </button>
         </>
       }
     >
       {pagar && (
-        <div className="space-y-3">
-          <div className="rounded-lg bg-slate-50 p-3">
-            <p className="text-sm text-slate-600">{pagar.code}</p>
-            <p className="text-lg font-semibold text-slate-900">Saldo {money(pagar.saldo)}</p>
+        <div className="space-y-4">
+          {/* De qué está compuesto lo que se va a pagar */}
+          <div className="rounded-lg border border-slate-200">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+              <div>
+                <p className="text-sm font-medium text-navy-900">
+                  {pagar.invoice_number ? `Factura ${pagar.invoice_number}` : pagar.code}
+                  <span className="ml-2 text-xs font-normal text-slate-400">
+                    {DTE_LABEL[pagar.dte_type ?? 0] ?? 'Sin documento tributario'}
+                  </span>
+                </p>
+                <p className="text-xs text-slate-400">
+                  {pagar.code} · emitida {dateShort(pagar.issued_at)}
+                  {pagar.due_date && ` · vence ${dateShort(pagar.due_date)}`}
+                  {pagar.dias_atraso > 0 && (
+                    <span className="ml-1 font-medium text-red-600">{pagar.dias_atraso} días de atraso</span>
+                  )}
+                </p>
+              </div>
+              {pagar.document_url && (
+                <a href={pagar.document_url} target="_blank" rel="noreferrer"
+                  className="btn-secondary px-3 py-1.5 text-xs">
+                  <FileText className="h-3.5 w-3.5" /> Ver la factura
+                </a>
+              )}
+            </div>
+
+            <dl className="divide-y divide-slate-50 px-4 py-1 text-sm">
+              <Linea k="Neto de mercadería" v={money(pagar.neto_mercaderia)} />
+              {Number(pagar.total) - Number(pagar.tax_amount) - Number(pagar.neto_mercaderia) !== 0 && (
+                <Linea k="Otros conceptos de la factura"
+                  v={money(Number(pagar.total) - Number(pagar.tax_amount) - Number(pagar.neto_mercaderia))}
+                  nota="Peajes, combustible o servicios que vienen en el mismo documento" />
+              )}
+              {Number(pagar.exempt_amount) !== 0 && <Linea k="Exento" v={money(pagar.exempt_amount)} />}
+              <Linea k="IVA" v={Number(pagar.tax_amount) === 0 ? 'sin IVA' : money(pagar.tax_amount)} />
+              <Linea k="Total del documento" v={money(pagar.total)} fuerte />
+              {Number(pagar.amount_paid) > 0 && (
+                <Linea k="Ya pagado" v={`− ${money(pagar.amount_paid)}`} />
+              )}
+              <Linea k="Saldo por pagar" v={money(saldo)} fuerte />
+            </dl>
           </div>
-          <div>
-            <label className="label">Monto</label>
-            <input className="input" type="number" placeholder={String(pagar.saldo)} value={monto} onChange={(e) => setMonto(e.target.value)} />
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="label">Monto</span>
+              <input className="input" type="number" min={0} placeholder={String(Math.round(saldo))}
+                value={monto} onChange={(e) => setMonto(e.target.value)} />
+              <button type="button" className="mt-1 text-xs text-sea-600 hover:underline"
+                onClick={() => setMonto(String(Math.round(saldo)))}>
+                Pagar el saldo completo ({money(saldo)})
+              </button>
+            </label>
+            <label className="block">
+              <span className="label">Fecha del pago</span>
+              <input className="input" type="date" value={fecha}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setFecha(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Forma de pago</span>
+              <select className="input" value={metodo} onChange={(e) => setMetodo(e.target.value as PaymentMethod)}>
+                {Object.entries(PAYMENT_METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="label">N° de operación</span>
+              <input className="input" value={referencia} onChange={(e) => setReferencia(e.target.value)}
+                placeholder="Transferencia, cheque o documento" />
+            </label>
           </div>
-          <div>
-            <label className="label">Método</label>
-            <select className="input" value={metodo} onChange={(e) => setMetodo(e.target.value as PaymentMethod)}>
-              {Object.entries(PAYMENT_METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Referencia</label>
-            <input className="input" value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="N° de transferencia o cheque" />
-          </div>
+
+          <label className="block">
+            <span className="label">Nota interna</span>
+            <input className="input" value={notas} onChange={(e) => setNotas(e.target.value)}
+              placeholder="Opcional: quién autorizó, de qué cuenta salió…" />
+          </label>
+
+          {excede && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+              Estás pagando {money(montoNum - saldo)} más que el saldo del documento.
+            </p>
+          )}
+
+          {!!pagos.data?.length && (
+            <div className="rounded-lg border border-slate-200">
+              <p className="border-b border-slate-100 px-4 py-2 text-xs font-medium text-slate-500">
+                Pagos ya registrados en este documento
+              </p>
+              <div className="divide-y divide-slate-50">
+                {pagos.data.map((x) => (
+                  <div key={x.id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+                    <div>
+                      <p className="text-slate-700">{dateShort(x.paid_at)}</p>
+                      <p className="text-xs text-slate-400">
+                        {x.code} · {PAYMENT_METHOD_LABEL[x.method]}
+                        {x.reference && ` · ref ${x.reference}`}
+                      </p>
+                    </div>
+                    <p className="tabular-nums font-medium">{money(x.amount)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {guardar.isError && <ErrorState error={guardar.error} />}
         </div>
       )}
     </Modal>
+  )
+}
+
+function Linea({ k, v, nota, fuerte }: { k: string; v: string; nota?: string; fuerte?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-1.5">
+      <dt className={clsx('text-slate-500', fuerte && 'font-medium text-slate-700')}>
+        {k}
+        {nota && <span className="block text-xs text-slate-400">{nota}</span>}
+      </dt>
+      <dd className={clsx('shrink-0 tabular-nums', fuerte ? 'font-semibold text-navy-900' : 'text-slate-600')}>
+        {v}
+      </dd>
+    </div>
   )
 }
 

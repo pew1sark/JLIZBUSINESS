@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
@@ -14,8 +14,17 @@ import { CUSTOMER_TYPE_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE } from 
 import type { CustomerType, DashboardKpis, PaymentStatus, ProductStock } from '../../lib/types'
 import { dateShort, kg, money, moneyShort, pct, relative } from '../../lib/format'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton, StatCard } from '../../components/ui'
+import { FiltroPeriodo } from '../../components/Filtros'
+import { rangoDe, type Periodo } from '../../lib/periodo'
 
-interface SeriePunto { dia: string; ventas: number; compras: number; margen: number }
+interface SeriePunto {
+  dia: string
+  ventas: number
+  compras: number
+  margen: number
+  documentos: number
+  venta_costeada: number
+}
 
 interface ClienteMapa {
   id: string
@@ -58,32 +67,33 @@ export function ResumenKpis({ k }: { k: DashboardKpis }) {
 
   return (
     <>
+      {/* Cada tarjeta lleva a la pantalla donde ese número se desarma. */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-4">
-        <StatCard label="Ventas hoy" value={money(k.ventas_hoy)}
+        <StatCard label="Ventas hoy" value={money(k.ventas_hoy)} to="/ventas"
           hint={`Semana ${moneyShort(k.ventas_semana)}`} icon={<TrendingUp className="h-4 w-4" />} />
-        <StatCard label="Facturado del mes" value={moneyShort(k.ventas_mes)}
+        <StatCard label="Facturado del mes" value={moneyShort(k.ventas_mes)} to="/ventas"
           hint={`${k.documentos_mes} documento${k.documentos_mes === 1 ? '' : 's'}`}
           icon={<Receipt className="h-4 w-4" />} />
-        <StatCard label="Por cobrar" value={moneyShort(k.cuentas_por_cobrar)}
+        <StatCard label="Por cobrar" value={moneyShort(k.cuentas_por_cobrar)} to="/cobranza"
           hint={`${k.documentos_por_cobrar} doc. · ${k.clientes_con_deuda} clientes`}
           icon={<Wallet className="h-4 w-4" />} />
-        <StatCard label="Vencido" value={moneyShort(k.cuentas_vencidas)}
+        <StatCard label="Vencido" value={moneyShort(k.cuentas_vencidas)} to="/cobranza"
           hint={k.vencido_grave > 0 ? `${moneyShort(k.vencido_grave)} con +30 días` : 'nada sobre 30 días'}
           tone={k.cuentas_vencidas > 0 ? 'danger' : 'positive'}
           icon={<AlertTriangle className="h-4 w-4" />} />
 
-        <StatCard label="Stock disponible" value={kg(k.stock_total)}
+        <StatCard label="Stock disponible" value={kg(k.stock_total)} to="/inventario"
           hint={`Valorizado ${moneyShort(k.stock_valor)}`} icon={<Boxes className="h-4 w-4" />} />
-        <StatCard label="Compras del mes" value={moneyShort(k.compras_mes)}
-          hint="recibidas" icon={<Package className="h-4 w-4" />} />
-        <StatCard label="Margen del mes"
+        <StatCard label="Compras del mes" value={moneyShort(k.compras_mes)} to="/compras"
+          hint="neto recibido, sin IVA" icon={<Package className="h-4 w-4" />} />
+        <StatCard label="Margen del mes" to="/finanzas"
           value={margenFiable ? `${margenPct}%` : '—'}
           hint={margenFiable ? money(k.margen_mes)
                 : cobertura === 0 ? 'falta cargar el costo'
                 : `solo ${pct(cobertura)} tiene costo`}
           tone={margenFiable ? (margenPct >= 20 ? 'positive' : 'warning') : 'default'}
           icon={<TrendingUp className="h-4 w-4" />} />
-        <StatCard label="Pedidos en curso" value={String(k.pedidos_pendientes)}
+        <StatCard label="Pedidos en curso" value={String(k.pedidos_pendientes)} to="/pedidos"
           hint={`${k.pedidos_en_reparto} en reparto · ${k.pedidos_entregados_hoy} entregados hoy`}
           icon={<ClipboardList className="h-4 w-4" />} />
       </div>
@@ -101,6 +111,11 @@ export function ResumenKpis({ k }: { k: DashboardKpis }) {
 }
 
 export function Dashboard() {
+  // El panel arranca en los últimos 30 días, que es la ventana con la que se
+  // mira el día a día, pero se puede llevar a cualquier mes o a un cliente.
+  const [periodo, setPeriodo] = useState<Periodo>(() => rangoDe('ultimos30'))
+  const [cliente, setCliente] = useState('')
+
   const kpis = useQuery({
     queryKey: ['dashboard-kpis'],
     refetchInterval: 60_000,
@@ -112,17 +127,62 @@ export function Dashboard() {
   })
 
   const serie = useQuery({
-    queryKey: ['sales-series'],
+    queryKey: ['panel-serie', periodo.desde, periodo.hasta, cliente],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('sales_series', { _days: 30 })
+      const { data, error } = await supabase.rpc('panel_series', {
+        _desde: periodo.desde, _hasta: periodo.hasta, _customer_id: cliente || null,
+      })
       if (error) throw error
       return (data as SeriePunto[]).map((d) => ({
         ...d,
+        fecha: d.dia,
         dia: dateShort(d.dia),
         ventas: Number(d.ventas),
         compras: Number(d.compras),
         margen: Number(d.margen),
+        documentos: Number(d.documentos),
+        venta_costeada: Number(d.venta_costeada),
       }))
+    },
+  })
+
+  /**
+   * Lo que el gráfico no dice solo: cuánto suma, cuánto es un día normal y
+   * qué día se salió de la norma. Mirar una curva sin estos cuatro números
+   * obliga a estimar a ojo.
+   */
+  const resumenSerie = useMemo(() => {
+    const s = serie.data ?? []
+    if (!s.length) return null
+    const conVenta = s.filter((d) => d.ventas > 0)
+    const ventas = s.reduce((a, d) => a + d.ventas, 0)
+    const compras = s.reduce((a, d) => a + d.compras, 0)
+    const docs = s.reduce((a, d) => a + d.documentos, 0)
+    const mejor = s.reduce((a, d) => (d.ventas > a.ventas ? d : a), s[0])
+    const peor = conVenta.length
+      ? conVenta.reduce((a, d) => (d.ventas < a.ventas ? d : a), conVenta[0]) : null
+    const costeada = s.reduce((a, d) => a + d.venta_costeada, 0)
+    const margen = s.reduce((a, d) => a + d.margen, 0)
+    return {
+      ventas, compras, docs,
+      promedio: conVenta.length ? ventas / conVenta.length : 0,
+      diasConVenta: conVenta.length,
+      dias: s.length,
+      mejor, peor,
+      margenPct: costeada > 0 ? Math.round((margen / costeada) * 1000) / 10 : null,
+      ticket: docs > 0 ? ventas / docs : 0,
+    }
+  }, [serie.data])
+
+  const clientesRanking = useQuery({
+    queryKey: ['panel-clientes', periodo.desde, periodo.hasta],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('panel_clientes', {
+        _desde: periodo.desde, _hasta: periodo.hasta, _limite: 8,
+      })
+      if (error) throw error
+      return data as { customer_id: string; cliente: string; venta: number
+        documentos: number; saldo: number; ultima_compra: string }[]
     },
   })
 
@@ -178,27 +238,17 @@ export function Dashboard() {
   })
 
   const topProductos = useQuery({
-    queryKey: ['top-productos'],
+    queryKey: ['panel-productos', periodo.desde, periodo.hasta, cliente],
     queryFn: async () => {
-      // Se leen las líneas de los documentos emitidos en los últimos 60 días.
-      const desde = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10)
-      const { data, error } = await supabase
-        .from('invoice_items')
-        .select('description, quantity, net_total, invoices!inner(issued_at)')
-        .gte('invoices.issued_at', desde)
-        .limit(3000)
+      const { data, error } = await supabase.rpc('panel_productos', {
+        _desde: periodo.desde, _hasta: periodo.hasta,
+        _customer_id: cliente || null, _limite: 8,
+      })
       if (error) throw error
-      const acc = new Map<string, { name: string; kilos: number; monto: number }>()
-      for (const it of data as unknown as {
-        description: string; quantity: number; net_total: number
-      }[]) {
-        const name = it.description || 'Sin producto'
-        const prev = acc.get(name) ?? { name, kilos: 0, monto: 0 }
-        prev.kilos += Number(it.quantity)
-        prev.monto += Number(it.net_total)
-        acc.set(name, prev)
-      }
-      return [...acc.values()].sort((a, b) => b.monto - a.monto).slice(0, 7)
+      return (data as { producto: string; kilos: number; venta: number
+        documentos: number; clientes: number }[])
+        .map((p) => ({ name: p.producto, kilos: Number(p.kilos), monto: Number(p.venta),
+          documentos: p.documentos, clientes: p.clientes }))
     },
   })
 
@@ -267,9 +317,59 @@ export function Dashboard() {
           </div>
         : k && <ResumenKpis k={k} />}
 
+      {/* Filtros del panel: acotan el gráfico, el resumen y los productos. */}
+      <div className="mt-5 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+        <span className="text-xs font-medium tracking-wide text-slate-500 uppercase">Analizar</span>
+        <FiltroPeriodo valor={periodo} onChange={setPeriodo} />
+        <select className="input w-auto" value={cliente} onChange={(e) => setCliente(e.target.value)}>
+          <option value="">Todos los clientes</option>
+          {(clientesMapa.data ?? [])
+            .slice()
+            .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+            .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {(cliente || periodo.preset !== 'ultimos30') && (
+          <button className="text-xs text-slate-500 hover:underline"
+            onClick={() => { setCliente(''); setPeriodo(rangoDe('ultimos30')) }}>
+            Limpiar
+          </button>
+        )}
+        {cliente && (
+          <Link to={`/clientes/${cliente}`} className="text-xs font-medium text-sea-600 hover:underline">
+            Ver la ficha del cliente
+          </Link>
+        )}
+      </div>
+
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2">
-          <CardHeader title="Ventas vs. compras · últimos 30 días" />
+          <CardHeader
+            title={cliente
+              ? `Ventas de ${(clientesMapa.data ?? []).find((c) => c.id === cliente)?.name ?? 'el cliente'}`
+              : 'Ventas vs. compras'}
+            action={<span className="text-xs text-slate-400">
+              {periodo.desde ? `${dateShort(periodo.desde)} a ${dateShort(periodo.hasta)}` : 'todo'}
+            </span>}
+          />
+
+          {resumenSerie && (
+            <div className="grid grid-cols-2 gap-px border-b border-slate-100 bg-slate-100 sm:grid-cols-4">
+              <ResumenDato label="Venta del período" valor={money(resumenSerie.ventas)}
+                nota={`${resumenSerie.docs} documentos`} />
+              <ResumenDato label="Promedio por día" valor={money(resumenSerie.promedio)}
+                nota={`${resumenSerie.diasConVenta} de ${resumenSerie.dias} días con venta`} />
+              <ResumenDato label="Mejor día" valor={money(resumenSerie.mejor.ventas)}
+                nota={resumenSerie.mejor.dia} />
+              {cliente
+                ? <ResumenDato label="Ticket promedio" valor={money(resumenSerie.ticket)}
+                    nota="por documento emitido" />
+                : <ResumenDato label="Compras del período" valor={money(resumenSerie.compras)}
+                    nota={resumenSerie.ventas > 0
+                      ? `${Math.round((resumenSerie.compras / resumenSerie.ventas) * 100)}% de la venta`
+                      : '—'} />}
+            </div>
+          )}
+
           <div className="h-72 p-4">
             {serie.isLoading ? (
               <Skeleton className="h-full w-full" />
@@ -378,6 +478,47 @@ export function Dashboard() {
         </Card>
 
         <Card>
+          <CardHeader
+            title="Clientes del período"
+            action={<Link to="/cobranza" className="text-xs font-medium text-navy-600 hover:underline">
+              Ver cobranza
+            </Link>}
+          />
+          <div className="divide-y divide-slate-50">
+            {clientesRanking.isLoading && <Skeleton className="m-4 h-40" />}
+            {!clientesRanking.isLoading && (clientesRanking.data ?? []).length === 0 && (
+              <p className="px-4 py-8 text-center text-sm text-slate-400">
+                Sin ventas en el período elegido
+              </p>
+            )}
+            {(clientesRanking.data ?? []).map((c, i) => (
+              <button key={c.customer_id}
+                onClick={() => setCliente(c.customer_id)}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50">
+                <span className="w-4 shrink-0 text-xs font-medium tabular-nums text-slate-300">{i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-800">{c.cliente}</p>
+                  <p className="text-xs text-slate-400">
+                    {c.documentos} doc. · última {dateShort(c.ultima_compra)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-medium tabular-nums text-slate-700">{moneyShort(c.venta)}</p>
+                  {Number(c.saldo) > 0 && (
+                    <p className="text-xs text-amber-600">{moneyShort(c.saldo)} por cobrar</p>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+          <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-400">
+            Toca un cliente para filtrar todo el panel por él.
+          </p>
+        </Card>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        <Card>
           <CardHeader title="Cartera por tipo" />
           <div className="divide-y divide-slate-50">
             {porTipo.map(([tipo, datos]) => (
@@ -405,17 +546,30 @@ export function Dashboard() {
 
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2">
-          <CardHeader title="Productos con mayor facturación" action={<span className="text-xs text-slate-400">últimos 60 días</span>} />
+          <CardHeader
+            title="Productos con mayor facturación"
+            action={<Link to="/reportes" className="text-xs font-medium text-navy-600 hover:underline">
+              Informe por producto
+            </Link>}
+          />
           <div className="h-72 p-4">
             {topProductos.isLoading ? (
               <Skeleton className="h-full w-full" />
+            ) : (topProductos.data ?? []).length === 0 ? (
+              <p className="flex h-full items-center justify-center text-sm text-slate-400">
+                Sin ventas con detalle de productos en este filtro
+              </p>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={topProductos.data} layout="vertical" margin={{ left: 24 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} tickFormatter={(v) => moneyShort(v as number)} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} axisLine={false} width={110} />
-                  <Tooltip formatter={(v) => money(v as number)} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+                    formatter={(v, _n, p) => [
+                      `${money(v as number)} · ${kg(p.payload.kilos)} · ${p.payload.clientes} cliente(s)`,
+                      'Facturado',
+                    ]} />
                   <Bar dataKey="monto" name="Facturado" radius={[0, 4, 4, 0]}>
                     {(topProductos.data ?? []).map((_, i) => (
                       <Cell key={i} fill={i === 0 ? '#0b2545' : '#5b88bd'} />
@@ -425,6 +579,14 @@ export function Dashboard() {
               </ResponsiveContainer>
             )}
           </div>
+          {!!topProductos.data?.length && (
+            <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+              <span className="font-medium text-slate-700">{topProductos.data[0].name}</span> encabeza con{' '}
+              {money(topProductos.data[0].monto)} ({kg(topProductos.data[0].kilos)}) en{' '}
+              {topProductos.data[0].clientes} cliente(s). Los {topProductos.data.length} productos del
+              gráfico suman {money(topProductos.data.reduce((a, p) => a + p.monto, 0))}.
+            </p>
+          )}
         </Card>
 
         <Card>
@@ -472,5 +634,16 @@ export function Dashboard() {
         </Card>
       </div>
     </>
+  )
+}
+
+/** Un número del resumen que va sobre el gráfico. */
+function ResumenDato({ label, valor, nota }: { label: string; valor: string; nota?: string }) {
+  return (
+    <div className="bg-white px-4 py-2.5">
+      <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">{label}</p>
+      <p className="mt-0.5 text-base font-semibold tabular-nums text-navy-900">{valor}</p>
+      {nota && <p className="text-xs text-slate-400">{nota}</p>}
+    </div>
   )
 }

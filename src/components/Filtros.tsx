@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useMemo, type ReactNode } from 'react'
+import { ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
 import { mesActual, nombreMes, rangoDe, rangoDeMes, type Periodo, type Preset } from '../lib/periodo'
+import type { Orden } from '../lib/orden'
 
 const ETIQUETA: Record<Preset, string> = {
   hoy: 'Hoy', ayer: 'Ayer', semana: 'Esta semana', semana_pasada: 'Semana pasada',
@@ -136,5 +137,31 @@ export function Paginador({
         {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} por página</option>)}
       </select>
     </div>
+  )
+}
+
+// ------------------------------------------------- encabezado que ordena
+/** Encabezado de columna que ordena al hacer clic. */
+export function ThOrden<C extends string>({
+  campo, orden, onOrden, children, className, porDefecto = 'desc',
+}: {
+  campo: C
+  orden: Orden<C>
+  onOrden: (campo: C, porDefecto?: 'asc' | 'desc') => void
+  children: ReactNode
+  className?: string
+  porDefecto?: 'asc' | 'desc'
+}) {
+  const activa = orden.campo === campo
+  return (
+    <th className={clsx('th', className)}>
+      <button type="button" onClick={() => onOrden(campo, porDefecto)}
+        className={clsx('inline-flex items-center gap-1 hover:text-navy-900',
+          activa ? 'font-semibold text-navy-900' : 'text-inherit')}>
+        {children}
+        <ArrowUpDown className={clsx('h-3 w-3', activa ? 'opacity-80' : 'opacity-25')} />
+        {activa && <span className="sr-only">{orden.dir === 'asc' ? 'ascendente' : 'descendente'}</span>}
+      </button>
+    </th>
   )
 }
