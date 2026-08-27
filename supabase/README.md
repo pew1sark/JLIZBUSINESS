@@ -27,6 +27,7 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 | `bsale_detalle_desde_xml` + `bsale_clasificar_lineas_de_compra` + `bsale_aplicar_costos` | Detalle de compra sacado del XML del DTE (`urlXml`), porque ni el libro de compras ni las recepciones lo entregan. Clasifica mercadería vs gasto, mapea al catálogo, crea `purchase_items` y calcula `avg_cost`/`last_cost`, con lo que las ventas quedan costeadas. |
 | `contactos_cliente_y_gastos` | `customer_contacts` (quién pide vs quién paga, con principal único por función) + `v_contacto_cobranza`, y `v_gastos_operacionales` con categorización de gasto deducida de la descripción del DTE. |
 | `cartola_de_pagos_de_venta` | `payment_statement_rows` + `aplicar_cartola_pagos()`: convierte la cartola de pagos en cobros imputados. Idempotente; nunca escribe `amount_paid` directo. |
+| `corte_de_analisis` (+ `_kpis_y_costos`, `_en_kpis`) | `settings.analisis.desde` + `analisis_desde()`: fecha de corte que respetan todas las vistas y KPIs. Lo anterior queda guardado pero fuera de los números. Evita comparar compras de 2025 contra ventas que aún no se cargan. |
 | `secreto_de_automatizacion` + `cron_bsale_cada_30_min` + `permitir_service_role_en_importacion` | `pg_cron` cada 30 min llama a la Edge Function `bsale-cron` vía `pg_net`, con el secreto guardado en Vault. `puede_importar()` reconoce a `service_role`, que no tiene `auth.uid()`. |
 
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.

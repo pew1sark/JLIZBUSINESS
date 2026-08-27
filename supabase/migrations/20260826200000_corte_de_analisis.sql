@@ -1,0 +1,24 @@
+-- ============================================================
+-- CORTE DE ANÁLISIS
+--
+-- La integración con Bsale trajo compras desde marzo 2025, pero las
+-- ventas de esos meses no están cargadas: $184.751.475 comprados contra
+-- cero vendido. Mezclarlo hace ver un negocio en ruina que no existe, e
+-- infla el "por pagar" con 17 meses de facturas mayormente pagadas.
+--
+-- En vez de borrar historia se define una FECHA DE CORTE en
+-- `settings.analisis.desde`, leída por `analisis_desde()`. Todo lo
+-- anterior queda guardado pero fuera del análisis. Cuando se carguen los
+-- períodos que faltan basta mover la fecha en Configuración: no hay que
+-- reimportar nada.
+--
+-- Respetan el corte: v_cuentas_por_cobrar, v_cuentas_por_pagar,
+-- v_gastos_operacionales, v_customer_balance, sales_series,
+-- dashboard_kpis, finance_kpis y bsale_aplicar_costos (un precio de
+-- compra de 2025 no representa lo que cuesta hoy el kilo de corvina).
+--
+-- Efecto al fijarlo en 2026-01-01: por pagar de $376.581.758 a
+-- $191.830.283 y gastos operacionales de $14.235.021 a $8.536.304.
+--
+-- Aplicado como `corte_de_analisis`, `corte_de_analisis_kpis_y_costos`
+-- y `corte_de_analisis_en_kpis`.

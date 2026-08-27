@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { PuestaEnMarcha } from './PuestaEnMarcha'
 import { BsaleConexion } from './BsaleConexion'
+import { CorteAnalisis } from '../../components/CorteAnalisis'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui'
 
 type Valores = Record<string, string | number | boolean | null>
@@ -217,7 +218,8 @@ export function Configuracion() {
 
       {guardar.isError && <div className="mt-3"><ErrorState error={guardar.error} /></div>}
 
-      <div className="mt-4">
+      <div className="mt-4 space-y-4">
+        <CorteAnalisis />
         <BsaleConexion />
       </div>
 
