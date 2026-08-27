@@ -51,6 +51,27 @@ export const dateTime = (v: string | null | undefined) =>
 export const timeOnly = (v: string | null | undefined) =>
   v ? new Date(v).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) : '—'
 
+/**
+ * Antigüedad de un campo de fecha SIN hora, contada en días.
+ *
+ * `relative()` sirve para marcas de tiempo completas. Aplicada a un `date` de
+ * Postgres —'2026-08-27'— la lee como medianoche UTC, así que una factura
+ * emitida hoy salía como «hace 21 h» y parecía vieja: en el panel daba la
+ * impresión de que nada se estaba actualizando.
+ */
+export const relativeDia = (v: string | null | undefined) => {
+  if (!v) return '—'
+  const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
+  const dia = aFecha(v)
+  dia.setHours(0, 0, 0, 0)
+  const dias = Math.round((hoy.getTime() - dia.getTime()) / 86_400_000)
+  if (dias <= 0) return 'hoy'
+  if (dias === 1) return 'ayer'
+  if (dias < 7) return `hace ${dias} días`
+  return dateShort(v)
+}
+
 export const relative = (v: string | null | undefined) => {
   if (!v) return '—'
   const diff = Date.now() - new Date(v).getTime()

@@ -13,7 +13,7 @@ import { supabase } from '../../lib/supabase'
 import { Mapa, type PuntoMapa } from '../../components/Mapa'
 import { CUSTOMER_TYPE_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE } from '../../lib/constants'
 import type { CustomerType, DashboardKpis, PaymentStatus, ProductStock } from '../../lib/types'
-import { dateShort, kg, money, moneyShort, pct, relative } from '../../lib/format'
+import { dateShort, kg, money, moneyShort, pct, relative, relativeDia } from '../../lib/format'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton, StatCard } from '../../components/ui'
 import { FiltroPeriodo } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
@@ -436,7 +436,7 @@ export function Dashboard() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-slate-800">{a.customers?.name ?? 'Cliente'}</p>
                   <p className="text-xs text-slate-400">
-                    {a.doc_type === 'nota_credito' ? 'NC' : 'Factura'} {a.doc_number} · {relative(a.issued_at)}
+                    {a.doc_type === 'nota_credito' ? 'NC' : 'Factura'} {a.doc_number} · {relativeDia(a.issued_at)}
                   </p>
                 </div>
                 <div className="text-right">
