@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import { ROLE_LABEL } from '../../lib/constants'
 import { initials } from '../../lib/format'
 import type { AppRole } from '../../lib/types'
+import { Logo } from '../ui'
 
 /**
  * Navegación de terreno: pocos destinos, botones grandes, pensada para el teléfono.
@@ -35,15 +36,17 @@ export function WorkerLayout() {
   return (
     <div className="flex min-h-screen flex-col bg-slate-100">
       <header className="safe-top sticky top-0 z-30 flex items-center gap-3 border-b border-navy-800 bg-navy-900 px-4 py-3 text-white">
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sea-500 text-xs font-semibold">
-          {initials(profile?.full_name || '?')}
-        </div>
+        <Logo className="h-9 w-9" ring />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{profile?.full_name}</p>
           <p className="text-[11px] text-navy-300">
             Pescadería Bilagay · {profile ? ROLE_LABEL[profile.role] : ''}
           </p>
         </div>
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-sea-500 text-[11px] font-semibold"
+          title={profile?.full_name ?? ''}>
+          {initials(profile?.full_name || '?')}
+        </span>
         <NavLink to="/t/avisos" className="rounded-lg p-2 text-navy-200 hover:bg-navy-800">
           <Bell className="h-5 w-5" />
         </NavLink>

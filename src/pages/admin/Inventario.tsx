@@ -6,7 +6,7 @@ import { useLocations, useOperacion, useProducts, useStock } from '../../lib/que
 import type { InventoryLot, LossReason, ProductStock } from '../../lib/types'
 import { LOSS_REASON_LABEL, MOVEMENT_LABEL } from '../../lib/constants'
 import { dateShort, dateTime, kg, money, moneyShort } from '../../lib/format'
-import { Card, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { Card, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap } from '../../components/ui'
 
 type Vista = 'stock' | 'lotes' | 'movimientos'
 
@@ -118,18 +118,16 @@ export function Inventario() {
         </div>
       )}
 
-      <div className="mt-4 mb-3 flex gap-1 rounded-lg bg-slate-200/60 p-1 text-sm sm:w-fit">
-        {(['stock', 'lotes', 'movimientos'] as Vista[]).map((v) => (
-          <button
-            key={v}
-            onClick={() => setVista(v)}
-            className={`flex-1 rounded-md px-4 py-1.5 font-medium capitalize sm:flex-none ${
-              vista === v ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500'
-            }`}
-          >
-            {v}
-          </button>
-        ))}
+      <div className="mt-4 mb-3">
+        <Pestanas
+          valor={vista}
+          onChange={setVista}
+          opciones={[
+            { id: 'stock', label: 'Stock' },
+            { id: 'lotes', label: 'Lotes' },
+            { id: 'movimientos', label: 'Movimientos' },
+          ]}
+        />
       </div>
 
       {stock.isError && <ErrorState error={stock.error} />}

@@ -8,6 +8,7 @@ import { PuestaEnMarcha } from './PuestaEnMarcha'
 import { BsaleConexion } from './BsaleConexion'
 import { CorteAnalisis } from '../../components/CorteAnalisis'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui'
+import { InstalarApp } from '../../components/InstalarApp'
 
 type Valores = Record<string, string | number | boolean | null>
 
@@ -130,6 +131,10 @@ export function Configuracion() {
       />
 
       <PuestaEnMarcha />
+
+      <div className="mb-4">
+        <InstalarApp />
+      </div>
 
       <Link to="/trabajadores">
         <Card className="mb-4 flex items-center gap-4 p-4 hover:border-navy-300">

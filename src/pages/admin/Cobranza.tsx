@@ -19,7 +19,7 @@ import { nombreMes, rangoDe, type Periodo } from '../../lib/periodo'
 import { ReporteCobro } from '../../components/ReporteCobro'
 import { DetalleFactura, type FacturaRef } from '../../components/DetalleFactura'
 import {
-  Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap,
+  Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap,
 } from '../../components/ui'
 
 const TRAMO: Record<string, { label: string; clase: string }> = {
@@ -462,22 +462,18 @@ export function Cobranza() {
       )}
 
       <div className="mt-4 mb-3 flex flex-wrap items-center gap-3">
-        <div className="flex gap-1 rounded-lg bg-slate-200/60 p-1 text-sm">
-          {([
-            ['clientes', `Por cliente${clientesFiltrados.length ? ` (${clientesFiltrados.length})` : ''}`],
-            ['facturas', `Facturas${facturasFiltradas.length ? ` (${facturasFiltradas.length})` : ''}`],
-            ['documentos', `Por cobrar${documentosFiltrados.length ? ` (${documentosFiltrados.length})` : ''}`],
-            ['comportamiento', 'Cómo pagan'],
-            ['pagos', `Pagos${sinImputar.data?.length ? ` · ${sinImputar.data.length} sin imputar` : ''}`],
-            ['avisos', `Avisos del portal${avisosPendientes ? ` (${avisosPendientes})` : ''}`],
-          ] as [Pestana, string][]).map(([k, label]) => (
-            <button key={k} onClick={() => setPestana(k)}
-              className={clsx('rounded-md px-4 py-1.5 font-medium',
-                pestana === k ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500')}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <Pestanas
+          valor={pestana}
+          onChange={setPestana}
+          opciones={[
+            { id: 'clientes', label: 'Por cliente', badge: clientesFiltrados.length || '' },
+            { id: 'facturas', label: 'Facturas', badge: facturasFiltradas.length || '' },
+            { id: 'documentos', label: 'Por cobrar', badge: documentosFiltrados.length || '' },
+            { id: 'comportamiento', label: 'Cómo pagan' },
+            { id: 'pagos', label: 'Pagos', badge: sinImputar.data?.length || '' },
+            { id: 'avisos', label: 'Avisos', badge: avisosPendientes || '' },
+          ]}
+        />
 
         {(pestana === 'clientes' || pestana === 'documentos'
           || pestana === 'facturas' || pestana === 'comportamiento') && (

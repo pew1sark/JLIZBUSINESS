@@ -15,7 +15,7 @@ import {
 } from '../../lib/constants'
 import { dateShort, dateTime, kg, money, moneyShort, relative } from '../../lib/format'
 import { ContactosCliente } from '../../components/ContactosCliente'
-import { Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { Card, CardHeader, EmptyState, ErrorState, PageHeader, Pestanas, Skeleton, StatCard, TableWrap } from '../../components/ui'
 
 type Pestana = 'pedidos' | 'productos' | 'facturas' | 'pagos'
 
@@ -316,22 +316,17 @@ export function ClienteDetalle() {
         <ContactosCliente customerId={c.id} />
       </div>
 
-      <div className="mt-4 mb-3 flex gap-1 rounded-lg bg-slate-200/60 p-1 text-sm sm:w-fit">
-        {([['pedidos', 'Pedidos'], ['productos', 'Qué compra'],
-           ['facturas', `Facturas${facturas.data?.length ? ` (${facturas.data.length})` : ''}`],
-           ['pagos', 'Pagos']] as [Pestana, string][]).map(
-          ([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setPestana(k)}
-              className={`flex-1 rounded-md px-4 py-1.5 font-medium sm:flex-none ${
-                pestana === k ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500'
-              }`}
-            >
-              {label}
-            </button>
-          ),
-        )}
+      <div className="mt-4 mb-3">
+        <Pestanas
+          valor={pestana}
+          onChange={setPestana}
+          opciones={[
+            { id: 'pedidos', label: 'Pedidos' },
+            { id: 'productos', label: 'Qué compra' },
+            { id: 'facturas', label: 'Facturas', badge: facturas.data?.length || '' },
+            { id: 'pagos', label: 'Pagos' },
+          ]}
+        />
       </div>
 
       {pestana === 'pedidos' && (

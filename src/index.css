@@ -66,8 +66,13 @@
   .badge {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
-  .th { @apply px-4 py-3 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase; }
-  .td { @apply px-4 py-3 text-sm text-slate-700; }
+  /* En el teléfono la tabla se desliza en horizontal. Sin nowrap, un nombre
+     largo de cliente parte la celda en cuatro líneas y la fila queda enorme:
+     se prefiere deslizar a lo ancho antes que crecer a lo alto. */
+  .th { @apply px-4 py-3 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-slate-500 uppercase; }
+  .td { @apply px-4 py-3 text-sm whitespace-nowrap text-slate-700; }
+  /* Escape para las celdas que sí deben envolver (notas, observaciones). */
+  .td-wrap { @apply whitespace-normal; }
 }
 
 /*
@@ -88,3 +93,7 @@
   ::-webkit-scrollbar-thumb { @apply rounded-full bg-slate-300; }
   ::-webkit-scrollbar-track { @apply bg-transparent; }
 }
+
+/* Fila de pestañas deslizable: la barra de scroll estorba en 40 px de alto. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

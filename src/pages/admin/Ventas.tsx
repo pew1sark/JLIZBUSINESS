@@ -12,7 +12,7 @@ import { dateShort, money } from '../../lib/format'
 import { descargarCsv } from '../../lib/csv'
 import { FiltroPeriodo, Paginador } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
-import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { Card, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap } from '../../components/ui'
 import { DetalleFactura } from '../../components/DetalleFactura'
 
 /**
@@ -220,17 +220,15 @@ export function Ventas() {
         }
       />
 
-      <div className="mb-4 flex gap-1 rounded-lg bg-slate-200/60 p-1 text-sm sm:w-fit">
-        {([
-          ['facturas', `Facturas emitidas${facturas.data?.length ? ` (${facturas.data.length})` : ''}`],
-          ['pedidos', `Pedidos internos${ventas.data?.length ? ` (${ventas.data.length})` : ''}`],
-        ] as [Fuente, string][]).map(([k, label]) => (
-          <button key={k} onClick={() => setFuente(k)}
-            className={`flex-1 rounded-md px-4 py-1.5 font-medium sm:flex-none ${
-              fuente === k ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500'}`}>
-            {label}
-          </button>
-        ))}
+      <div className="mb-4">
+        <Pestanas
+          valor={fuente}
+          onChange={setFuente}
+          opciones={[
+            { id: 'facturas', label: 'Facturas emitidas', badge: facturas.data?.length || '' },
+            { id: 'pedidos', label: 'Pedidos internos', badge: ventas.data?.length || '' },
+          ]}
+        />
       </div>
 
       {fuente === 'facturas' ? (

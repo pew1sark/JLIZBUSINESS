@@ -12,7 +12,7 @@ import { descargarCsv } from '../../lib/csv'
 import { FiltroPeriodo } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
 import { ReporteCobro } from '../../components/ReporteCobro'
-import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { Card, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap } from '../../components/ui'
 
 interface Kpis {
   venta_mes: number
@@ -361,22 +361,16 @@ export function Finanzas() {
         </>
       )}
 
-      <div className="mt-4 mb-3 flex gap-1 rounded-lg bg-slate-200/60 p-1 text-sm sm:w-fit">
-        {([
-          ['cobranza', `Cobranza${cobrarFiltrado.length ? ` (${cobrarFiltrado.length})` : ''}`],
-          ['pagos', `Pagos a proveedores${pagarFiltrado.length ? ` (${pagarFiltrado.length})` : ''}`],
-          ['rentabilidad', 'Rentabilidad'],
-        ] as [Pestana, string][]).map(([k2, label]) => (
-          <button
-            key={k2}
-            onClick={() => setPestana(k2)}
-            className={`flex-1 rounded-md px-4 py-1.5 font-medium sm:flex-none ${
-              pestana === k2 ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="mt-4 mb-3">
+        <Pestanas
+          valor={pestana}
+          onChange={setPestana}
+          opciones={[
+            { id: 'cobranza', label: 'Cobranza', badge: cobrarFiltrado.length || '' },
+            { id: 'pagos', label: 'Pagos a proveedores', badge: pagarFiltrado.length || '' },
+            { id: 'rentabilidad', label: 'Rentabilidad' },
+          ]}
+        />
       </div>
 
       {(pestana === 'cobranza' || pestana === 'pagos') && (

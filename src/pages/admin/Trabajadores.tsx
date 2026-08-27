@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext'
 import type { AppRole, Profile } from '../../lib/types'
 import { ROLE_LABEL } from '../../lib/constants'
 import { dateShort, dateTime, initials, relative } from '../../lib/format'
-import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, TableWrap } from '../../components/ui'
+import { Card, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, TableWrap } from '../../components/ui'
 
 const ROLES: AppRole[] = ['admin', 'finanzas', 'ventas', 'compras', 'inventario', 'empaque', 'reparto']
 
@@ -153,22 +153,16 @@ export function Trabajadores() {
         <Resumen label="Administradores" valor={String((usuarios.data ?? []).filter((u) => u.role === 'admin' && u.is_active).length)} />
       </div>
 
-      <div className="mb-4 flex gap-1 rounded-lg bg-slate-200/60 p-1 text-sm sm:w-fit">
-        {([
-          ['usuarios', 'Usuarios'],
-          ['invitaciones', `Invitaciones${pendientes.length ? ` (${pendientes.length})` : ''}`],
-          ['permisos', 'Permisos por rol'],
-        ] as [Pestana, string][]).map(([k, label]) => (
-          <button
-            key={k}
-            onClick={() => setPestana(k)}
-            className={`flex-1 rounded-md px-4 py-1.5 font-medium sm:flex-none ${
-              pestana === k ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="mb-4">
+        <Pestanas
+          valor={pestana}
+          onChange={setPestana}
+          opciones={[
+            { id: 'usuarios', label: 'Usuarios' },
+            { id: 'invitaciones', label: 'Invitaciones', badge: pendientes.length || '' },
+            { id: 'permisos', label: 'Permisos por rol' },
+          ]}
+        />
       </div>
 
       {cambiarRol.isError && <div className="mb-3"><ErrorState error={cambiarRol.error} /></div>}

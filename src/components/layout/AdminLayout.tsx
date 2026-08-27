@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   BarChart3, Bell, Boxes, ClipboardCheck, ClipboardList, Fish, LayoutDashboard, LogOut, Menu, Package,
@@ -45,7 +45,7 @@ export function AdminLayout() {
   }
 
   const sidebar = (
-    <div className="flex h-full flex-col bg-navy-900 text-navy-100">
+    <div className="safe-top safe-bottom flex h-full flex-col bg-navy-900 text-navy-100">
       <div className="flex items-center gap-2.5 px-5 py-5">
         <Logo className="h-10 w-10" ring />
         <div>
@@ -99,6 +99,13 @@ export function AdminLayout() {
     </div>
   )
 
+  // Con el menú abierto el fondo no debe moverse: en el teléfono el dedo
+  // terminaba desplazando la página de atrás en vez del menú.
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [menuOpen])
+
   return (
     <div className="min-h-screen bg-slate-100">
       {/* Sidebar escritorio */}
@@ -123,10 +130,13 @@ export function AdminLayout() {
 
           <button
             onClick={() => setSearchOpen(true)}
-            className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-400 hover:border-slate-300 sm:max-w-md"
+            aria-label="Buscar"
+            className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400 hover:border-slate-300 sm:max-w-md"
           >
-            <Search className="h-4 w-4" />
-            Buscar pedido, cliente, producto, lote…
+            <Search className="h-4 w-4 shrink-0" />
+            <span className="truncate">
+              Buscar<span className="hidden sm:inline"> pedido, cliente, producto, lote</span>…
+            </span>
           </button>
 
           <div className="ml-auto flex items-center gap-1">
@@ -144,7 +154,7 @@ export function AdminLayout() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-[1600px] p-4 sm:p-6">
+        <main className="safe-bottom mx-auto max-w-[1600px] p-4 sm:p-6">
           <Outlet />
         </main>
       </div>

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { AlertCircle, ChevronRight, Inbox, Loader2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { Link } from 'react-router-dom'
@@ -75,10 +75,13 @@ export function StatCard({
         <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">{label}</p>
         {icon && <span className="text-slate-300 group-hover:text-sea-500">{icon}</span>}
       </div>
-      {/* Un total exacto como $349.752.798 no cabe en 2xl y se corta: el tamaño
-          baja según el largo en vez de redondear el número. */}
+      {/* Un total exacto como $349.752.798 no cabe y se corta: el tamaño baja
+          según el largo en vez de redondear el número. En el teléfono la
+          tarjeta mide la mitad, así que arranca un escalón más abajo. */}
       <p className={clsx('mt-2 font-semibold tabular-nums', tones[tone],
-        value.length > 15 ? 'text-lg' : value.length > 12 ? 'text-xl' : 'text-2xl')}>
+        value.length > 13 ? 'text-base sm:text-lg'
+        : value.length > 10 ? 'text-lg sm:text-xl'
+        : 'text-xl sm:text-2xl')}>
         {value}
       </p>
       {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
@@ -187,6 +190,56 @@ export function PhaseNotice({ phase, children }: { phase: string; children: Reac
     <div className="rounded-lg border border-dashed border-navy-300 bg-navy-50 p-5 text-sm text-navy-800">
       <p className="mb-1 font-semibold">Módulo planificado · {phase}</p>
       <p className="text-navy-700/80">{children}</p>
+    </div>
+  )
+}
+
+/**
+ * Pestañas. En escritorio se reparten en una fila; en el teléfono la fila se
+ * desliza en horizontal en vez de apretujarse o cortarse, y la pestaña activa
+ * se trae a la vista sola. Cobranza llegó a tener seis y en un teléfono no
+ * cabían de ninguna forma.
+ */
+export function Pestanas<T extends string>({
+  valor, onChange, opciones, className,
+}: {
+  valor: T
+  onChange: (v: T) => void
+  opciones: { id: T; label: string; badge?: string | number }[]
+  className?: string
+}) {
+  const activa = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    activa.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [valor])
+
+  return (
+    <div className={clsx(
+      // `snap` deja la pestaña alineada al soltar el dedo; sin la barra visible
+      // porque estorba en una fila de 40 px de alto.
+      'no-scrollbar -mx-1 flex snap-x gap-1 overflow-x-auto rounded-lg bg-slate-200/60 p-1 text-sm',
+      'sm:mx-0 sm:w-fit sm:overflow-visible',
+      className,
+    )}>
+      {opciones.map((o) => (
+        <button
+          key={o.id}
+          ref={o.id === valor ? activa : undefined}
+          onClick={() => onChange(o.id)}
+          className={clsx(
+            'shrink-0 snap-start rounded-md px-3 py-2 font-medium whitespace-nowrap transition-colors sm:px-4 sm:py-1.5',
+            o.id === valor ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+          )}
+        >
+          {o.label}
+          {o.badge !== undefined && o.badge !== '' && (
+            <span className={clsx('ml-1.5 rounded-full px-1.5 py-0.5 text-[11px]',
+              o.id === valor ? 'bg-slate-100 text-slate-600' : 'bg-slate-300/60 text-slate-600')}>
+              {o.badge}
+            </span>
+          )}
+        </button>
+      ))}
     </div>
   )
 }
