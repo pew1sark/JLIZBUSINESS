@@ -53,6 +53,8 @@ const FILTRO_COMPORT: Record<FiltroComport, string> = {
 export function Cobranza() {
   const qc = useQueryClient()
   const [pestana, setPestana] = useState<Pestana>('clientes')
+  const [detalleResumen, setDetalleResumen] =
+    useState<{ titulo: string; detalle: DetalleTarjeta } | null>(null)
   const [buscar, setBuscar] = useState('')
   const [periodo, setPeriodo] = useState<Periodo>(() => rangoDe('todo'))
   const [pagina, setPagina] = useState(0)
@@ -262,22 +264,45 @@ export function Cobranza() {
 
     if (pestana === 'facturas') {
       const f = facturasFiltradas
-      const impagas = f.filter((x) => x.payment_status !== 'pagado')
+      // La nota de crédito entra con total negativo y con su propio amount_paid
+      // positivo. Sumarla junto al resto contaba lo cobrado de más y restaba el
+      // saldo dos veces: "por cobrar" salía $6,9 millones por debajo de la
+      // deuda real. Para plata cobrada y por cobrar se miran solo los
+      // documentos de venta; lo anulado va en su propia tarjeta.
+      const docs = f.filter((x) => x.doc_type !== 'nota_credito')
+      const notas = f.filter((x) => x.doc_type === 'nota_credito')
+      const impagas = docs.filter((x) => x.payment_status !== 'pagado' && Number(x.saldo) > 0)
       return {
         alcance: 'facturas' as const, filtrando: filtrando || estadoFactura !== 'todas' || !!clienteFactura,
         cantidad: f.length,
         tarjetas: [
-          { label: 'Total facturado', valor: sum(f, (x) => x.total), hint: `${f.length} documentos` },
-          { label: 'Cobrado', valor: sum(f, (x) => x.amount_paid),
-            hint: `${f.filter((x) => x.payment_status === 'pagado').length} pagadas` },
-          { label: 'Por cobrar', valor: sum(f, (x) => x.saldo), tono: 'warning' as const,
-            hint: `${impagas.length} sin saldar` },
+          { label: 'Total facturado', valor: sum(f, (x) => x.total), hint: `${f.length} documentos`,
+            detalle: deFacturas(f, (x) => x.total) },
+          { label: 'Cobrado', valor: sum(docs, (x) => x.amount_paid),
+            hint: notas.length > 0
+              ? `${docs.filter((x) => x.payment_status === 'pagado').length} pagadas · sin contar notas`
+              : `${docs.filter((x) => x.payment_status === 'pagado').length} pagadas`,
+            detalle: deFacturas(docs.filter((x) => Number(x.amount_paid) > 0), (x) => x.amount_paid) },
+          { label: 'Por cobrar', valor: sum(impagas, (x) => x.saldo), tono: 'warning' as const,
+            hint: `${impagas.length} sin saldar`,
+            detalle: deFacturas(impagas, (x) => x.saldo) },
           { label: 'Vencido', valor: sum(impagas.filter((x) => (x.dias_atraso ?? 0) > 0), (x) => x.saldo),
             tono: 'danger' as const,
-            hint: `${impagas.filter((x) => (x.dias_atraso ?? 0) > 0).length} documentos` },
+            hint: `${impagas.filter((x) => (x.dias_atraso ?? 0) > 0).length} documentos`,
+            detalle: deFacturas(impagas.filter((x) => (x.dias_atraso ?? 0) > 0), (x) => x.saldo) },
           { label: 'Días promedio de pago',
             texto: resumenFacturas.diasPromedio !== null ? `${resumenFacturas.diasPromedio} d` : '—',
-            hint: `${resumenFacturas.pagadas} facturas pagadas` },
+            hint: `${resumenFacturas.pagadas} facturas pagadas`,
+            detalle: {
+              unidad: 'dias' as const,
+              explica: 'Cada factura pagada, con lo que tardó desde su emisión.',
+              filas: f.filter((x) => x.dias_en_pagar !== null)
+                .map((x) => ({
+                  id: x.invoice_id, titulo: `${x.doc_number} · ${x.cliente}`,
+                  sub: `emitida ${dateShort(x.issued_at)} · pagada ${dateShort(x.ultimo_pago)}`,
+                  monto: x.dias_en_pagar ?? 0,
+                })),
+            } },
         ],
       }
     }
@@ -289,15 +314,19 @@ export function Cobranza() {
         alcance: 'documentos' as const, filtrando, cantidad: d.length,
         tarjetas: [
           { label: 'Deuda', valor: sum(d, (x) => x.saldo),
-            hint: `${d.length} documentos · ${new Set(d.map((x) => x.customer_id)).size} clientes` },
+            hint: `${d.length} documentos · ${new Set(d.map((x) => x.customer_id)).size} clientes`,
+            detalle: deDocumentos(d) },
           { label: 'Vencido', valor: sum(venc, (x) => x.saldo), tono: 'danger' as const,
-            hint: `${venc.length} documentos` },
+            hint: `${venc.length} documentos`, detalle: deDocumentos(venc) },
           { label: 'Más de 30 días',
             valor: sum(d.filter((x) => x.dias_atraso > 30), (x) => x.saldo), tono: 'danger' as const,
-            hint: 'Riesgo real de incobrable' },
+            hint: 'Riesgo real de incobrable',
+            detalle: deDocumentos(d.filter((x) => x.dias_atraso > 30)) },
           { label: 'Por vencer', valor: sum(d.filter((x) => x.dias_atraso === 0), (x) => x.saldo),
-            hint: 'Todavía dentro del plazo' },
-          { label: 'Facturado', valor: sum(d, (x) => x.total), hint: 'Total de los documentos' },
+            hint: 'Todavía dentro del plazo',
+            detalle: deDocumentos(d.filter((x) => x.dias_atraso === 0)) },
+          { label: 'Facturado', valor: sum(d, (x) => x.total), hint: 'Total de los documentos',
+            detalle: deDocumentos(d, (x) => x.total) },
         ],
       }
     }
@@ -313,16 +342,48 @@ export function Cobranza() {
         cantidad: c.length,
         tarjetas: [
           { label: 'Clientes', texto: String(c.length),
-            hint: `${c.filter((x) => x.facturas_abiertas > 0).length} con deuda abierta` },
+            hint: `${c.filter((x) => x.facturas_abiertas > 0).length} con deuda abierta`,
+            detalle: {
+              unidad: 'cantidad' as const, explica: 'Facturas abiertas por cliente.',
+              filas: c.map((x) => ({ id: x.customer_id, titulo: x.cliente,
+                sub: `${x.facturas_totales} facturas · plazo ${x.plazo_pactado} d`,
+                monto: x.facturas_abiertas })),
+            } },
           { label: 'Días promedio de pago', texto: prom !== null ? `${prom} d` : '—',
-            hint: `sobre ${pagadas} facturas pagadas` },
+            hint: `sobre ${pagadas} facturas pagadas`,
+            detalle: {
+              unidad: 'dias' as const,
+              explica: 'Cuánto tarda cada cliente, contra el plazo que tiene pactado.',
+              filas: conDatos.map((x) => ({ id: x.customer_id, titulo: x.cliente,
+                sub: `plazo ${x.plazo_pactado} d · ${x.facturas_pagadas} pagadas`
+                     + ((x.exceso_sobre_plazo ?? 0) > 0 ? ` · ${x.exceso_sobre_plazo} d de más` : ''),
+                monto: x.dias_promedio ?? 0 })),
+            } },
           { label: 'Se pasan del plazo',
             texto: String(c.filter((x) => (x.exceso_sobre_plazo ?? 0) > 0).length),
-            tono: 'warning' as const, hint: `de ${conDatos.length} medibles` },
+            tono: 'warning' as const, hint: `de ${conDatos.length} medibles`,
+            detalle: {
+              unidad: 'dias' as const, explica: 'Días que cada uno se pasa, en promedio.',
+              filas: c.filter((x) => (x.exceso_sobre_plazo ?? 0) > 0)
+                .map((x) => ({ id: x.customer_id, titulo: x.cliente,
+                  sub: `paga en ${x.dias_promedio} d con plazo de ${x.plazo_pactado} d`,
+                  monto: x.exceso_sobre_plazo ?? 0 })),
+            } },
           { label: 'Saldo abierto', valor: sum(c, (x) => x.saldo_abierto), tono: 'warning' as const,
-            hint: `${sum(c, (x) => x.facturas_abiertas)} documentos` },
+            hint: `${sum(c, (x) => x.facturas_abiertas)} documentos`,
+            detalle: {
+              filas: c.filter((x) => Number(x.saldo_abierto) > 0)
+                .map((x) => ({ id: x.customer_id, titulo: x.cliente,
+                  sub: `${x.facturas_abiertas} documento(s) · espera hasta ${x.espera_maxima ?? 0} d`,
+                  monto: Number(x.saldo_abierto) })),
+            } },
           { label: 'Facturado', valor: sum(c, (x) => x.monto_total),
-            hint: `${sum(c, (x) => x.facturas_totales)} documentos` },
+            hint: `${sum(c, (x) => x.facturas_totales)} documentos`,
+            detalle: {
+              filas: c.filter((x) => Number(x.monto_total) > 0)
+                .map((x) => ({ id: x.customer_id, titulo: x.cliente,
+                  sub: `${x.facturas_totales} documento(s)`, monto: Number(x.monto_total) })),
+            } },
         ],
       }
     }
@@ -333,16 +394,26 @@ export function Cobranza() {
       alcance: 'clientes' as const, filtrando: !!q, cantidad: cs.length,
       tarjetas: [
         { label: 'Deuda total', valor: sum(cs, (c) => c.deuda_total),
-          hint: `${cs.filter((c) => Number(c.deuda_total) > 0).length} clientes` },
+          hint: `${cs.filter((c) => Number(c.deuda_total) > 0).length} clientes`,
+          detalle: deClientes(cs, (c) => Number(c.deuda_total),
+            (c) => `${c.documentos} documento(s)`) },
         { label: 'Vencido', valor: sum(cs, (c) => c.vencido), tono: 'danger' as const,
-          hint: `${pctDe(sum(cs, (c) => c.vencido), sum(cs, (c) => c.deuda_total))} de la cartera` },
+          hint: `${pctDe(sum(cs, (c) => c.vencido), sum(cs, (c) => c.deuda_total))} de la cartera`,
+          detalle: deClientes(cs, (c) => Number(c.vencido),
+            (c) => `peor atraso ${c.peor_atraso} d · debe ${money(Number(c.deuda_total))}`) },
         { label: 'Más de 30 días',
           valor: sum(cs, (c) => Number(c.atraso_31_60) + Number(c.atraso_60_mas)),
-          tono: 'danger' as const, hint: 'Riesgo real de incobrable' },
-        { label: 'Por vencer', valor: sum(cs, (c) => c.por_vencer), hint: 'Todavía dentro del plazo' },
+          tono: 'danger' as const, hint: 'Riesgo real de incobrable',
+          detalle: deClientes(cs, (c) => Number(c.atraso_31_60) + Number(c.atraso_60_mas),
+            (c) => `31-60 d: ${money(Number(c.atraso_31_60))} · +60 d: ${money(Number(c.atraso_60_mas))}`) },
+        { label: 'Por vencer', valor: sum(cs, (c) => c.por_vencer), hint: 'Todavía dentro del plazo',
+          detalle: deClientes(cs, (c) => Number(c.por_vencer),
+            (c) => c.vence_primero ? `vence primero el ${dateShort(c.vence_primero)}` : 'sin plazo') },
         { label: 'A favor del cliente',
           valor: sum(cs, (c) => Number(c.nota_credito) + Number(c.pago_a_cuenta)),
-          tono: 'warning' as const, hint: 'Notas de crédito y pagos sin imputar' },
+          tono: 'warning' as const, hint: 'Notas de crédito y pagos sin imputar',
+          detalle: deClientes(cs, (c) => Number(c.nota_credito) + Number(c.pago_a_cuenta),
+            (c) => `notas ${money(Number(c.nota_credito))} · sin imputar ${money(Number(c.pago_a_cuenta))}`) },
       ],
     }
   }, [pestana, q, periodo.desde, periodo.hasta, clientesFiltrados, facturasFiltradas,
@@ -442,12 +513,18 @@ export function Cobranza() {
       {clientes.data && (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-            {resumen.tarjetas.map((t) => (
-              <StatCard key={t.label} label={t.label}
-                value={'texto' in t && t.texto !== undefined ? t.texto : money(t.valor ?? 0)}
-                hint={t.hint}
-                tone={('valor' in t && Number(t.valor) === 0) ? 'default' : t.tono} />
-            ))}
+            {resumen.tarjetas.map((t) => {
+              const d = 'detalle' in t ? (t.detalle as DetalleTarjeta | undefined) : undefined
+              return (
+                <StatCard key={t.label} label={t.label}
+                  value={'texto' in t && t.texto !== undefined ? t.texto : money(t.valor ?? 0)}
+                  hint={t.hint}
+                  tone={('valor' in t && Number(t.valor) === 0) ? 'default' : t.tono}
+                  onClick={d && d.filas.length > 0
+                    ? () => setDetalleResumen({ titulo: t.label, detalle: d })
+                    : undefined} />
+              )
+            })}
           </div>
 
           {resumen.filtrando && (
@@ -608,6 +685,11 @@ export function Cobranza() {
 
       <DetalleFactura factura={verFactura} onClose={() => setVerFactura(null)} />
 
+      <DetalleResumen
+        titulo={detalleResumen?.titulo ?? ''}
+        detalle={detalleResumen?.detalle ?? null}
+        onClose={() => setDetalleResumen(null)} />
+
       {cartola && <ModalCartola customerId={cartola} onClose={() => setCartola(null)} />}
 
       {cobrar && (
@@ -625,6 +707,143 @@ export function Cobranza() {
 
 const pctDe = (parte: number, total: number) =>
   total > 0 ? `${Math.round((parte / total) * 100)}%` : '0%'
+
+/**
+ * Una fila del detalle de un número del resumen.
+ *
+ * Los cuatro conjuntos que se resumen —facturas, documentos por cobrar,
+ * clientes y comportamiento— tienen formas distintas, así que se normalizan a
+ * esto: un título, una línea de contexto y el monto con el que cada uno aporta
+ * al total de la tarjeta. Así un solo modal sirve para los veinte números.
+ */
+interface FilaDetalle {
+  id: string
+  titulo: string
+  sub?: string
+  monto: number
+}
+
+interface DetalleTarjeta {
+  filas: FilaDetalle[]
+  /** Qué se está sumando: pesos por defecto, o días, o una cuenta. */
+  unidad?: 'dinero' | 'dias' | 'cantidad'
+  explica?: string
+}
+
+const deFacturas = (
+  fs: FacturaConPago[], monto: (f: FacturaConPago) => number = (f) => Number(f.saldo),
+): DetalleTarjeta => ({
+  filas: fs.map((f) => ({
+    id: f.invoice_id,
+    titulo: `${f.doc_number} · ${f.cliente}`,
+    sub: `emitida ${dateShort(f.issued_at)}`
+       + (f.due_date ? ` · vence ${dateShort(f.due_date)}` : '')
+       + ((f.dias_atraso ?? 0) > 0 ? ` · ${f.dias_atraso} d de atraso` : ''),
+    monto: Number(monto(f)),
+  })),
+})
+
+const deDocumentos = (
+  ds: CuentaPorCobrar[], monto: (d: CuentaPorCobrar) => number = (d) => Number(d.saldo),
+): DetalleTarjeta => ({
+  filas: ds.map((d) => ({
+    id: `${d.origen}:${d.ref_id}`,
+    titulo: `${d.doc_number ?? d.code} · ${d.cliente}`,
+    sub: `emitido ${dateShort(d.issued_at)}`
+       + (d.due_date ? ` · vence ${dateShort(d.due_date)}` : '')
+       + (d.dias_atraso > 0 ? ` · ${d.dias_atraso} d de atraso` : ' · dentro del plazo'),
+    monto: Number(monto(d)),
+  })),
+})
+
+const deClientes = (
+  cs: EstadoCuentaCliente[],
+  monto: (c: EstadoCuentaCliente) => number,
+  sub: (c: EstadoCuentaCliente) => string,
+): DetalleTarjeta => ({
+  filas: cs.filter((c) => monto(c) > 0)
+    .map((c) => ({ id: c.customer_id, titulo: c.cliente, sub: sub(c), monto: monto(c) })),
+})
+
+/**
+ * El detalle de un número del resumen.
+ *
+ * Un total en una tarjeta no dice de dónde sale. «Vencido: $15.775.602» invita
+ * a la pregunta de quién lo debe, y hasta ahora había que ir a filtrar la tabla
+ * de abajo a mano para averiguarlo. Acá se abre la composición ordenada de
+ * mayor a menor, que es el orden en que uno la va a trabajar.
+ */
+function DetalleResumen({
+  titulo, detalle, onClose,
+}: {
+  titulo: string
+  detalle: DetalleTarjeta | null
+  onClose: () => void
+}) {
+  const [buscar, setBuscar] = useState('')
+
+  const filas = useMemo(() => {
+    const q = buscar.trim().toLowerCase()
+    return (detalle?.filas ?? [])
+      .filter((f) => !q || f.titulo.toLowerCase().includes(q) || (f.sub ?? '').toLowerCase().includes(q))
+      .sort((a, b) => b.monto - a.monto)
+  }, [detalle, buscar])
+
+  const unidad = detalle?.unidad ?? 'dinero'
+  const total = filas.reduce((a, f) => a + f.monto, 0)
+  // Un promedio de días no se suma: el total sería un número sin sentido.
+  const esPromedio = unidad === 'dias'
+  const valor = (n: number) =>
+    unidad === 'dinero' ? money(n) : unidad === 'dias' ? `${Math.round(n)} d` : String(n)
+
+  return (
+    <Modal open={!!detalle} onClose={onClose} wide title={titulo}>
+      {detalle && (
+        <div className="space-y-3">
+          {detalle.explica && <p className="text-sm text-slate-500">{detalle.explica}</p>}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 sm:max-w-xs">
+              <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400" />
+              <input className="input pl-9" placeholder="Buscar…"
+                value={buscar} onChange={(e) => setBuscar(e.target.value)} />
+            </div>
+            <span className="text-xs text-slate-500">
+              {filas.length} de {detalle.filas.length}
+              {' · '}
+              {esPromedio
+                ? `${filas.length ? Math.round(total / filas.length) : 0} d en promedio`
+                : valor(total)}
+            </span>
+          </div>
+
+          {filas.length === 0 ? (
+            <EmptyState title="Nada que mostrar"
+              hint={buscar ? 'Prueba con otra búsqueda.' : 'Este número está en cero.'} />
+          ) : (
+            <div className="max-h-[26rem] overflow-y-auto rounded-lg border border-slate-200">
+              {filas.map((f, i) => (
+                <div key={f.id}
+                  className="flex items-center gap-3 border-b border-slate-50 px-3 py-2 last:border-0">
+                  <span className="w-6 shrink-0 text-right text-xs tabular-nums text-slate-300">
+                    {i + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-800">{f.titulo}</p>
+                    {f.sub && <p className="truncate text-xs text-slate-400">{f.sub}</p>}
+                  </div>
+                  <span className="shrink-0 text-sm font-medium tabular-nums text-slate-700">
+                    {valor(f.monto)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  )
+}
 
 // ---------------------------------------------------------------- clientes
 function TablaClientes({

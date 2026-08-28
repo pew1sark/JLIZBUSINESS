@@ -54,7 +54,7 @@ export function CardHeader({ title, action }: { title: string; action?: ReactNod
  * quién es obliga a buscarlo a mano en otra pantalla.
  */
 export function StatCard({
-  label, value, hint, icon, tone = 'default', to,
+  label, value, hint, icon, tone = 'default', to, onClick,
 }: {
   label: string
   value: string
@@ -62,6 +62,8 @@ export function StatCard({
   icon?: ReactNode
   tone?: 'default' | 'positive' | 'warning' | 'danger'
   to?: string
+  /** Abre el detalle del número en la misma pantalla, sin navegar. */
+  onClick?: () => void
 }) {
   const tones = {
     default: 'text-slate-900',
@@ -88,10 +90,25 @@ export function StatCard({
     </>
   )
 
-  if (!to) return <div className="card p-4">{cuerpo}</div>
+  if (!to && !onClick) return <div className="card p-4">{cuerpo}</div>
+
+  // Un número que se puede abrir tiene que verse así antes de tocarlo: el
+  // cursor y el borde al pasar por encima son la única pista de que hay algo
+  // debajo.
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick}
+        className="card group block p-4 text-left transition hover:border-sea-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-sea-400 focus-visible:outline-none">
+        {cuerpo}
+        <span className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-medium text-sea-600 opacity-0 transition group-hover:opacity-100">
+          Ver detalle <ChevronRight className="h-3 w-3" />
+        </span>
+      </button>
+    )
+  }
 
   return (
-    <Link to={to}
+    <Link to={to!}
       className="card group block p-4 transition hover:border-sea-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-sea-400 focus-visible:outline-none">
       {cuerpo}
       <span className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-medium text-sea-600 opacity-0 transition group-hover:opacity-100">
