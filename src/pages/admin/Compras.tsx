@@ -6,7 +6,7 @@ import { useProducts, useSuppliers } from '../../lib/queries'
 import type { PaymentMethod, Purchase } from '../../lib/types'
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE, PURCHASE_STATUS_LABEL } from '../../lib/constants'
 import { dateShort, kg, money } from '../../lib/format'
-import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { Card, EmptyState, ErrorState, Modal, NombreEntidad, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
 import { FiltroPeriodo, Paginador } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
 import { descargarCsv } from '../../lib/csv'
@@ -51,7 +51,7 @@ export function Compras() {
     queryFn: async () => {
       let q = supabase
         .from('purchases')
-        .select('*, suppliers(id, name)')
+        .select('*, suppliers(id, name, company, rut)')
         .order('purchase_date', { ascending: false })
         .limit(2000)
       if (periodo.desde) q = q.gte('purchase_date', periodo.desde)
@@ -68,6 +68,8 @@ export function Compras() {
       if (estado !== 'todos' && c.status !== estado) return false
       if (pago !== 'todos' && c.payment_status !== pago) return false
       if (t && !(c.suppliers?.name ?? '').toLowerCase().includes(t)
+            && !(c.suppliers?.company ?? '').toLowerCase().includes(t)
+            && !(c.suppliers?.rut ?? '').toLowerCase().includes(t)
             && !(c.invoice_number ?? '').toLowerCase().includes(t)
             && !c.code.toLowerCase().includes(t)
             && !(c.origin ?? '').toLowerCase().includes(t)) return false
@@ -84,11 +86,12 @@ export function Compras() {
 
   function exportar() {
     const filas: (string | number)[][] = [[
-      'Compra', 'Proveedor', 'Fecha', 'Factura', 'Origen', 'Neto', 'Flete', 'Otros',
+      'Compra', 'Proveedor', 'Razón social', 'RUT', 'Fecha', 'Factura', 'Origen', 'Neto', 'Flete', 'Otros',
       'Total', 'Estado', 'Pago', 'Pagado', 'Saldo',
     ]]
     for (const c of filtradas) {
-      filas.push([c.code, c.suppliers?.name ?? '', c.purchase_date, c.invoice_number ?? '',
+      filas.push([c.code, c.suppliers?.name ?? '', c.suppliers?.company ?? '',
+        c.suppliers?.rut ?? '', c.purchase_date, c.invoice_number ?? '',
         c.origin ?? '', c.subtotal, c.freight_cost, c.other_costs, c.total,
         c.status, c.payment_status, c.amount_paid, Number(c.total) - Number(c.amount_paid)])
     }
@@ -213,7 +216,10 @@ export function Compras() {
                     </button>
                     <p className="text-xs text-slate-400">{c.origin ?? '—'}</p>
                   </td>
-                  <td className="td font-medium text-slate-800">{c.suppliers?.name}</td>
+                  <td className="td">
+                    <NombreEntidad nombre={c.suppliers?.name}
+                      razonSocial={c.suppliers?.company} rut={c.suppliers?.rut} />
+                  </td>
                   <td className="td text-slate-500">{dateShort(c.purchase_date)}</td>
                   <td className="td text-xs text-slate-500">
                     {money(c.subtotal)} + {money(Number(c.freight_cost) + Number(c.other_costs))}

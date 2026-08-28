@@ -12,7 +12,7 @@ import { dateShort, money } from '../../lib/format'
 import { descargarCsv } from '../../lib/csv'
 import { FiltroPeriodo, Paginador } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
-import { Card, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { Card, EmptyState, ErrorState, Modal, NombreEntidad, PageHeader, Pestanas, Skeleton, StatCard, TableWrap } from '../../components/ui'
 import { DetalleFactura } from '../../components/DetalleFactura'
 
 /**
@@ -23,7 +23,10 @@ import { DetalleFactura } from '../../components/DetalleFactura'
 type Fuente = 'facturas' | 'pedidos'
 
 interface FacturaFila extends Invoice {
-  customers: { id: string; name: string; comuna: string | null } | null
+  customers: {
+    id: string; name: string; comuna: string | null
+    company: string | null; rut: string | null
+  } | null
 }
 
 const DOC_LABEL: Record<string, string> = {
@@ -55,7 +58,7 @@ export function Ventas() {
     queryFn: async () => {
       let q = supabase
         .from('orders')
-        .select('*, customers(id, name, customer_type, phone, address, comuna)')
+        .select('*, customers(id, name, company, rut, customer_type, phone, address, comuna)')
         .neq('status', 'cancelado')
         .order('order_date', { ascending: false })
         .limit(400)
@@ -72,7 +75,7 @@ export function Ventas() {
     queryFn: async () => {
       let q = supabase
         .from('invoices')
-        .select('*, customers(id, name, comuna)')
+        .select('*, customers(id, name, company, rut, comuna)')
         .order('issued_at', { ascending: false })
         .order('doc_number', { ascending: false })
         // Un año completo pasa de mil documentos: con el tope anterior, elegir
@@ -97,7 +100,9 @@ export function Ventas() {
       if (soloDeuda && f.payment_status === 'pagado') return false
       if (estadoPago !== 'todos' && f.payment_status !== estadoPago) return false
       if (q && !f.doc_number.toLowerCase().includes(q)
-            && !(f.customers?.name ?? '').toLowerCase().includes(q)) return false
+            && !(f.customers?.name ?? '').toLowerCase().includes(q)
+            && !(f.customers?.company ?? '').toLowerCase().includes(q)
+            && !(f.customers?.rut ?? '').toLowerCase().includes(q)) return false
       return true
     })
   }, [facturas.data, soloDeuda, estadoPago, buscar])
@@ -183,11 +188,13 @@ export function Ventas() {
 
   function exportarFacturas() {
     const filas: (string | number)[][] = [[
-      'Documento', 'Tipo', 'Cliente', 'Emitida', 'Vence', 'Neto', 'IVA', 'Total', 'Pagado', 'Saldo', 'Estado',
+      'Documento', 'Tipo', 'Cliente', 'Razón social', 'RUT',
+      'Emitida', 'Vence', 'Neto', 'IVA', 'Total', 'Pagado', 'Saldo', 'Estado',
     ]]
     for (const f of facturasFiltradas) {
       filas.push([
         f.doc_number, DOC_LABEL[f.doc_type] ?? f.doc_type, f.customers?.name ?? '',
+        f.customers?.company ?? '', f.customers?.rut ?? '',
         f.issued_at, f.due_date ?? '', f.net_amount, f.tax_amount, f.total,
         f.amount_paid, Number(f.total) - Number(f.amount_paid), f.payment_status,
       ])
@@ -328,7 +335,10 @@ export function Ventas() {
                         <p className="font-medium text-navy-900">{f.doc_number}</p>
                         <p className="text-xs text-slate-400">{DOC_LABEL[f.doc_type] ?? f.doc_type}</p>
                       </td>
-                      <td className="td font-medium text-slate-800">{f.customers?.name}</td>
+                      <td className="td">
+                        <NombreEntidad nombre={f.customers?.name}
+                          razonSocial={f.customers?.company} rut={f.customers?.rut} />
+                      </td>
                       <td className="td text-slate-500">{dateShort(f.issued_at)}</td>
                       <td className="td text-slate-500">{dateShort(f.due_date)}</td>
                       <td className="td text-right tabular-nums text-slate-500">{money(f.net_amount)}</td>
@@ -387,7 +397,10 @@ export function Ventas() {
               return (
                 <tr key={o.id} className="hover:bg-slate-50">
                   <td className="td font-mono text-xs">{o.code}</td>
-                  <td className="td font-medium text-slate-800">{o.customers?.name}</td>
+                  <td className="td">
+                    <NombreEntidad nombre={o.customers?.name}
+                      razonSocial={o.customers?.company} rut={o.customers?.rut} />
+                  </td>
                   <td className="td text-slate-500">{dateShort(o.order_date)}</td>
                   <td className="td">
                     <span className={`badge ${ORDER_STATUS_STYLE[o.status]}`}>{ORDER_STATUS_LABEL[o.status]}</span>

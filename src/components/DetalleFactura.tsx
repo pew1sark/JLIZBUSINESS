@@ -46,6 +46,7 @@ export function DetalleFactura({
       if (error) throw error
       return data as {
         doc_type: string; doc_number: string; cliente: string; rut: string | null
+        razon_social: string | null
         issued_at: string; due_date: string | null
         net_amount: number; tax_amount: number; total: number
         amount_paid: number; saldo: number; payment_status: PaymentStatus
@@ -91,7 +92,9 @@ export function DetalleFactura({
           {d && (
             <>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Campo k="Cliente" v={d.cliente} />
+                <Campo k="Cliente" v={d.cliente}
+                  bajo={d.razon_social && d.razon_social.trim().toLowerCase() !== d.cliente.trim().toLowerCase()
+                        ? d.razon_social : d.rut} />
                 <Campo k="Emitida" v={dateShort(d.issued_at)} />
                 <Campo k="Vence" v={dateShort(d.due_date)} />
                 <Campo k="Saldo" v={money(d.saldo)} />
@@ -217,11 +220,12 @@ export function DetalleFactura({
   )
 }
 
-function Campo({ k, v }: { k: string; v: string }) {
+function Campo({ k, v, bajo }: { k: string; v: string; bajo?: string | null }) {
   return (
     <div className="rounded-lg bg-slate-50 px-3 py-2">
       <p className="text-[11px] tracking-wide text-slate-500 uppercase">{k}</p>
       <p className="mt-0.5 font-medium text-slate-900">{v}</p>
+      {bajo && <p className="text-xs text-slate-400">{bajo}</p>}
     </div>
   )
 }

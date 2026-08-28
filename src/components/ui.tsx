@@ -247,3 +247,38 @@ export function Pestanas<T extends string>({
     </div>
   )
 }
+
+/**
+ * El nombre de un cliente o proveedor con su razón social debajo.
+ *
+ * Los dos nombres hacen falta y sirven para cosas distintas: por el de fantasía
+ * se reconoce el local («Panchita», «La Mar»), y por la razón social se cuadra
+ * con la factura y con el SII. En las listas de compras y ventas solo aparecía
+ * el primero, y para conciliar contra un documento tributario había que ir a
+ * abrir la ficha del cliente.
+ *
+ * La segunda línea solo se dibuja si aporta algo: si la razón social no está o
+ * es igual al nombre, se cae al RUT, y si tampoco hay RUT no se muestra nada.
+ * De 49 clientes solo 4 tienen razón social distinta; repetir el mismo texto en
+ * dos tonos en las otras 45 filas sería ruido.
+ */
+export function NombreEntidad({
+  nombre, razonSocial, rut, alto,
+}: {
+  nombre: string | null | undefined
+  razonSocial?: string | null
+  rut?: string | null
+  /** Para las filas donde el nombre va en el color oscuro de título. */
+  alto?: boolean
+}) {
+  const n = (nombre ?? '').trim() || '—'
+  const social = (razonSocial ?? '').trim()
+  const distinta = social !== '' && social.toLowerCase() !== n.toLowerCase()
+  const abajo = distinta ? social : (rut ?? '').trim()
+  return (
+    <>
+      <p className={clsx('font-medium', alto ? 'text-navy-900' : 'text-slate-800')}>{n}</p>
+      {abajo !== '' && <p className="text-xs text-slate-400">{abajo}</p>}
+    </>
+  )
+}

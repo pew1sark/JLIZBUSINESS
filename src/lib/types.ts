@@ -138,7 +138,8 @@ export interface Order {
   delivered_at: string | null
   invoice_number: string | null
   invoice_status: 'pendiente' | 'emitida' | 'anulada'
-  customers?: Pick<Customer, 'id' | 'name' | 'customer_type' | 'phone' | 'address' | 'comuna'>
+  customers?: Pick<Customer,
+    'id' | 'name' | 'company' | 'rut' | 'customer_type' | 'phone' | 'address' | 'comuna'>
 }
 
 export interface OrderItem {
@@ -172,7 +173,7 @@ export interface InventoryLot {
   location: string | null
   status: LotStatus
   products?: Pick<Product, 'id' | 'name' | 'sku'>
-  suppliers?: Pick<Supplier, 'id' | 'name'>
+  suppliers?: Pick<Supplier, 'id' | 'name' | 'company' | 'rut'>
 }
 
 export interface Purchase {
@@ -193,7 +194,7 @@ export interface Purchase {
   document_url: string | null
   origin: string | null
   bsale_document_id: number | null
-  suppliers?: Pick<Supplier, 'id' | 'name'>
+  suppliers?: Pick<Supplier, 'id' | 'name' | 'company' | 'rut'>
 }
 
 export interface Delivery {
@@ -442,6 +443,8 @@ export interface FacturaConPago {
   estado_corregido: boolean
   estado_forzado_motivo: string | null
   estado_forzado_at: string | null
+  /** El nombre con el que se emite la factura, cuando difiere del de fantasía. */
+  razon_social: string | null
 }
 
 /** Una línea del informe de fechas de pago: este día entró plata y cubrió este documento. */
