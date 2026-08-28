@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { isAdminRole } from '../lib/permissions'
 import { Navigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -16,7 +17,7 @@ export function Login() {
   const [msg, setMsg] = useState<{ kind: 'error' | 'ok'; text: string } | null>(null)
 
   if (!loading && session && profile) {
-    return <Navigate to={profile.role === 'admin' ? '/' : '/t'} replace />
+    return <Navigate to={isAdminRole(profile.role) ? '/' : '/t'} replace />
   }
 
   async function onSubmit(e: React.FormEvent) {

@@ -12,7 +12,9 @@ export type Resource =
 
 export type Action = 'read' | 'create' | 'update' | 'delete' | 'approve'
 
-const MATRIX: Record<Exclude<AppRole, 'admin'>, Partial<Record<Resource, Action[]>>> = {
+// admin y soporte quedan fuera de la matriz: pueden todo, y en la base eso lo
+// resuelve `is_admin()`, por el que soporte también pasa.
+const MATRIX: Record<Exclude<AppRole, 'admin' | 'soporte'>, Partial<Record<Resource, Action[]>>> = {
   finanzas: {
     payments: ['read', 'create', 'update'],
     invoices: ['read', 'create', 'update'],
@@ -59,9 +61,17 @@ const MATRIX: Record<Exclude<AppRole, 'admin'>, Partial<Record<Resource, Action[
 
 export function can(role: AppRole | undefined, resource: Resource, action: Action = 'read'): boolean {
   if (!role) return false
-  if (role === 'admin') return true
+  if (role === 'admin' || role === 'soporte') return true
   return MATRIX[role]?.[resource]?.includes(action) ?? false
 }
 
-/** Los administradores usan la interfaz de escritorio; el resto, la interfaz de terreno. */
-export const isAdminRole = (role: AppRole | undefined) => role === 'admin'
+/**
+ * Los administradores usan la interfaz de escritorio; el resto, la de terreno.
+ * Soporte entra por acá también: si no, quien mantiene el sistema terminaría en
+ * el portal del repartidor.
+ */
+export const isAdminRole = (role: AppRole | undefined) =>
+  role === 'admin' || role === 'soporte'
+
+/** Lo técnico —integraciones, tokens, corte de análisis— es solo de soporte. */
+export const isSoporte = (role: AppRole | undefined) => role === 'soporte'

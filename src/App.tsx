@@ -16,6 +16,7 @@ const Cobranza = lazy(() => import('./pages/admin/Cobranza').then((m) => ({ defa
 const Auditoria = lazy(() => import('./pages/admin/Auditoria').then((m) => ({ default: m.Auditoria })))
 const Trabajadores = lazy(() => import('./pages/admin/Trabajadores').then((m) => ({ default: m.Trabajadores })))
 const Configuracion = lazy(() => import('./pages/admin/Configuracion').then((m) => ({ default: m.Configuracion })))
+const Soporte = lazy(() => import('./pages/admin/Soporte').then((m) => ({ default: m.Soporte })))
 const Pedidos = lazy(() => import('./pages/admin/Pedidos').then((m) => ({ default: m.Pedidos })))
 const Clientes = lazy(() => import('./pages/admin/Clientes').then((m) => ({ default: m.Clientes })))
 const ClienteDetalle = lazy(() => import('./pages/admin/ClienteDetalle').then((m) => ({ default: m.ClienteDetalle })))
@@ -96,6 +97,7 @@ export default function App() {
               <Route path="/levantamiento" element={<Levantamiento />} />
               <Route path="/auditoria" element={<Auditoria />} />
               <Route path="/configuracion" element={<Configuracion />} />
+              <Route path="/soporte" element={<Soporte />} />
             </Route>
 
             {/* INTERFAZ B · Terreno (móvil) */}

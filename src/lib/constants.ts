@@ -5,6 +5,7 @@ import type {
 
 export const ROLE_LABEL: Record<AppRole, string> = {
   admin: 'Administrador',
+  soporte: 'Soporte técnico',
   finanzas: 'Finanzas',
   ventas: 'Ventas',
   compras: 'Compras',

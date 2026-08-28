@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   BarChart3, Bell, Boxes, ClipboardCheck, ClipboardList, Fish, LayoutDashboard, LogOut, Menu, Package,
-  FileText, HandCoins, History, Receipt, TrendingDown, Search, Settings, ShieldCheck, ShoppingCart, Truck, Users, Wallet, X,
+  FileText, HandCoins, History, Receipt, TrendingDown, Search, Settings, ShieldCheck, ShoppingCart, Truck, Users, Wallet, Wrench, X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../../context/AuthContext'
@@ -32,6 +32,10 @@ const NAV = [
   { to: '/auditoria', label: 'Auditoría', icon: History },
   { to: '/configuracion', label: 'Configuración', icon: Settings },
 ]
+
+// Solo para quien mantiene el sistema. Va aparte y no dentro de NAV para que
+// no haya forma de que se cuele en el menú de la empresa por descuido.
+const NAV_SOPORTE = [{ to: '/soporte', label: 'Soporte', icon: Wrench }]
 
 export function AdminLayout() {
   const { profile, signOut } = useAuth()
@@ -74,6 +78,25 @@ export function AdminLayout() {
             {label}
           </NavLink>
         ))}
+
+        {profile?.role === 'soporte' && (
+          <>
+            <p className="mt-4 px-3 pb-1 text-[10px] font-semibold tracking-wider text-navy-400 uppercase">
+              Solo soporte
+            </p>
+            {NAV_SOPORTE.map(({ to, label, icon: Icon }) => (
+              <NavLink key={to} to={to} onClick={() => setMenuOpen(false)}
+                className={({ isActive }) =>
+                  clsx('flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors',
+                    isActive
+                      ? 'bg-navy-700 font-medium text-white'
+                      : 'text-navy-200 hover:bg-navy-800 hover:text-white')}>
+                <Icon className="h-[18px] w-[18px] shrink-0" />
+                {label}
+              </NavLink>
+            ))}
+          </>
+        )}
       </nav>
 
       <div className="border-t border-navy-800 p-3">

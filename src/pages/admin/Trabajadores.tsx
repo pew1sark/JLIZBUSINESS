@@ -10,10 +10,14 @@ import { ROLE_LABEL } from '../../lib/constants'
 import { dateShort, dateTime, initials, relative } from '../../lib/format'
 import { Card, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, TableWrap } from '../../components/ui'
 
+// 'soporte' no está en la lista a propósito: no se asigna desde esta pantalla.
+// Es el rol de quien mantiene el sistema y se cambia en la base, para que un
+// administrador no pueda dárselo a sí mismo ni quitárselo a quien lo tiene.
 const ROLES: AppRole[] = ['admin', 'finanzas', 'ventas', 'compras', 'inventario', 'empaque', 'reparto']
 
 const ROL_ESTILO: Record<AppRole, string> = {
   admin: 'bg-navy-100 text-navy-800',
+  soporte: 'bg-fuchsia-100 text-fuchsia-800',
   finanzas: 'bg-violet-100 text-violet-700',
   ventas: 'bg-blue-100 text-blue-700',
   compras: 'bg-amber-100 text-amber-800',
@@ -150,7 +154,7 @@ export function Trabajadores() {
         <Resumen label="Usuarios activos" valor={String(activos)} />
         <Resumen label="Cuentas totales" valor={String(usuarios.data?.length ?? 0)} />
         <Resumen label="Invitaciones pendientes" valor={String(pendientes.length)} />
-        <Resumen label="Administradores" valor={String((usuarios.data ?? []).filter((u) => u.role === 'admin' && u.is_active).length)} />
+        <Resumen label="Administradores" valor={String((usuarios.data ?? []).filter((u) => (u.role === 'admin' || u.role === 'soporte') && u.is_active).length)} />
       </div>
 
       <div className="mb-4">
@@ -470,6 +474,7 @@ function InvitarModal({ open, onClose }: { open: boolean; onClose: () => void })
 
 const DESCRIPCION_ROL: Record<AppRole, string> = {
   admin: 'Acceso total, incluidos costos, márgenes, finanzas y esta pantalla.',
+  soporte: 'Mantiene el sistema: todo lo del administrador más integraciones y datos técnicos.',
   finanzas: 'Cobros, pagos y cuentas por cobrar. No modifica inventario ni pedidos.',
   ventas: 'Clientes, pedidos y precios de venta. No ve costos ni compras.',
   compras: 'Proveedores, compras y recepción de mercadería.',

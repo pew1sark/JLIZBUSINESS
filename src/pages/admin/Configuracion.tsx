@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronRight, Loader2, Lock, ShieldCheck, Users } from 'lucide-react'
+import { Check, ChevronRight, Loader2, Lock, ShieldCheck, Users, Wrench } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import { PuestaEnMarcha } from './PuestaEnMarcha'
-import { BsaleConexion } from './BsaleConexion'
-import { CorteAnalisis } from '../../components/CorteAnalisis'
+import { isAdminRole } from '../../lib/permissions'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui'
 import { InstalarApp } from '../../components/InstalarApp'
 
@@ -108,7 +106,7 @@ export function Configuracion() {
     },
   })
 
-  if (profile?.role !== 'admin') {
+  if (!isAdminRole(profile?.role)) {
     return (
       <Card className="p-8 text-center">
         <Lock className="mx-auto mb-3 h-8 w-8 text-slate-300" />
@@ -129,8 +127,6 @@ export function Configuracion() {
           </button>
         }
       />
-
-      <PuestaEnMarcha />
 
       <div className="mb-4">
         <InstalarApp />
@@ -223,10 +219,25 @@ export function Configuracion() {
 
       {guardar.isError && <div className="mt-3"><ErrorState error={guardar.error} /></div>}
 
-      <div className="mt-4 space-y-4">
-        <CorteAnalisis />
-        <BsaleConexion />
-      </div>
+      {/* El corte de análisis y la conexión con Bsale se fueron a /soporte: no
+          son decisiones del negocio y un cambio distraído ahí rompe la
+          sincronización o saca datos de los informes. */}
+      {profile?.role === 'soporte' && (
+        <Link to="/soporte">
+          <Card className="mt-4 flex items-center gap-4 p-4 hover:border-navy-300">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-fuchsia-100 text-fuchsia-700">
+              <Wrench className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-slate-900">Soporte técnico</p>
+              <p className="text-sm text-slate-500">
+                Integraciones, corte de análisis, estado de los módulos y puesta en marcha
+              </p>
+            </div>
+            <ChevronRight className="h-5 w-5 text-slate-300" />
+          </Card>
+        </Link>
+      )}
 
       <Card className="mt-4 flex items-start gap-3 p-4 text-xs text-slate-500">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />

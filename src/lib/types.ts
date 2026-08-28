@@ -3,6 +3,12 @@
 
 export type AppRole =
   | 'admin' | 'finanzas' | 'ventas' | 'compras' | 'inventario' | 'empaque' | 'reparto'
+  /**
+   * Quien mantiene el sistema. Puede todo lo de un administrador y además lo
+   * técnico —integraciones, tokens, corte de análisis—, que es lo que la
+   * empresa no debería poder tocar sin querer.
+   */
+  | 'soporte'
 export type EntityStatus = 'activo' | 'inactivo' | 'archivado'
 export type UnitMeasure = 'kg' | 'g' | 'unidad' | 'caja' | 'bandeja'
 export type OrderStatus =
