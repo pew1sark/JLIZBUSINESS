@@ -125,16 +125,24 @@ export function CorregirFactura({
         _invoice_id: invoiceId, _estado: estado || null, _motivo: motivo.trim(),
       })
       if (error) throw error
-      return data
+      return data as { cobros_soltados: number; saldo: number }
     },
-    onSuccess: () => {
-      setAviso(estado ? 'Estado corregido' : 'Vuelve al estado automático')
+    onSuccess: (r) => {
+      const soltado = Number(r?.cobros_soltados ?? 0)
+      setAviso(
+        !estado ? 'Vuelve al estado automático'
+        : soltado > 0
+          ? `Estado corregido. Se soltaron ${money(soltado)} en cobros: quedan sin imputar, en la lista de pagos por asignar.`
+          : 'Estado corregido')
       refrescar()
     },
     onError: (e: Error) => setAviso(e.message),
   })
 
   const f = factura.data
+  const cobrosEnPlata = (imputaciones.data ?? [])
+    .filter((i) => !i.es_nota_credito)
+    .reduce((a, i) => a + Number(i.monto_imputado), 0)
   const motivoOk = motivo.trim().length >= 3
   const trabajando = corregirImputacion.isPending || corregirEstado.isPending
 
@@ -247,10 +255,26 @@ export function CorregirFactura({
             <h4 className="text-xs font-semibold tracking-wide text-amber-800 uppercase">
               Forzar el estado
             </h4>
-            <p className="mt-1 mb-3 text-xs text-amber-800/80">
+            <p className="mt-1 text-xs text-amber-800/80">
               Solo si la factura se saldó por fuera del sistema o quedó cerrada por error. El
               estado forzado le gana al cálculo y no lo pisa la sincronización.
             </p>
+            {/* La deuda no sale del estado sino del saldo: marcar "pendiente" sin
+                soltar el cobro dejaba la factura en cero y no aparecía en cobranza. */}
+            {(estado === 'pendiente' || estado === 'vencido') && cobrosEnPlata > 0 && (
+              <p className="mt-2 mb-3 rounded-lg bg-white/70 px-3 py-2 text-xs text-amber-900">
+                Se van a soltar {money(cobrosEnPlata)} en cobros para que la factura vuelva a
+                deber su total. El cobro no se borra: queda sin imputar, para asignarlo a la
+                factura que corresponda o darlo de baja.
+              </p>
+            )}
+            {estado === 'pagado' && f.saldo > 0 && (
+              <p className="mt-2 mb-3 rounded-lg bg-white/70 px-3 py-2 text-xs text-amber-900">
+                La factura deja de figurar en cuentas por cobrar aunque le queden {money(f.saldo)}
+                {' '}sin cubrir con cobros registrados.
+              </p>
+            )}
+            {!estado && <div className="mb-3" />}
             <div className="flex flex-wrap items-center gap-2">
               <select className="input w-auto" value={estado}
                 onChange={(e) => { setEstado(e.target.value); setAviso(null) }}>

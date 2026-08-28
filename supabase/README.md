@@ -38,6 +38,8 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 
 | `fechas_de_pago_corridas` | **La planilla de ventas 2026 traía la columna FECHA PAGO desalineada.** En 219 de 242 casos la fecha guardada era la de la factura de la fila anterior (los otros 23, de dos o tres filas antes): el patrón de una columna pegada con una fila de diferencia. Los montos siempre estuvieron bien; solo las fechas, y con ellas los días que tarda en pagar cada cliente, el informe de fechas de pago y la recaudación por mes. 83 facturas se movieron más de 15 días. Además 16 figuraban pagadas sin estarlo —el corrimiento les puso una fecha ajena y con ella un cobro por el total—; se quitaron 15, dejando la 35573 porque su cobro se registró a mano después de guardarse la planilla. No toca notas de crédito. Contra el documento corregido, 1.797 de 1.798 facturas coinciden. |
 
+| `forzar_estado_mueve_la_plata` | **Arregla un defecto de `corregir_factura`.** Forzar el estado cambiaba `payment_status` y nada más, pero la deuda no sale del estado sino del saldo: marcar una factura como "pendiente" con su cobro todavía imputado la dejaba en saldo cero y no aparecía en cuentas por cobrar —la etiqueta decía una cosa y la plata otra—. Ahora forzar 'pendiente' o 'vencido' suelta las imputaciones (el cobro no se borra: queda sin imputar, para reasignarlo o darlo de baja) y forzar 'pagado' saca la factura de `v_cuentas_por_cobrar` aunque le quede saldo. Las notas de crédito nunca se sueltan. |
+
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 
 ## Sincronizar los archivos locales con la base
