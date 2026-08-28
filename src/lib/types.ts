@@ -346,6 +346,8 @@ export interface EstadoCuentaCliente {
   saldo_neto: number
   ultimo_pago: string | null
   sobre_limite: boolean
+  /** Dirección del local. Separa dos fichas que comparten RUT. */
+  direccion: string | null
 }
 
 export interface PagoSinImputar {

@@ -634,6 +634,16 @@ function TablaClientes({
   onCartola: (id: string) => void
   onCobrar: (c: EstadoCuentaCliente) => void
 }) {
+  // Un RUT que aparece en dos fichas son dos locales de la misma empresa.
+  const rutRepetido = useMemo(() => {
+    const veces = new Map<string, number>()
+    for (const c of filas) {
+      const r = c.rut ?? ''
+      if (r) veces.set(r, (veces.get(r) ?? 0) + 1)
+    }
+    return new Set([...veces].filter(([, n]) => n > 1).map(([r]) => r))
+  }, [filas])
+
   if (cargando) return <Skeleton className="h-64" />
   if (!filas.length) {
     return (
@@ -670,6 +680,11 @@ function TablaClientes({
                 </button>
                 <p className="text-xs text-slate-400">
                   {c.rut} · {c.payment_terms_days} días
+                  {/* Un mismo RUT con dos fichas son dos locales de la misma
+                      empresa; sin la dirección parecen un duplicado. */}
+                  {rutRepetido.has(c.rut ?? '') && c.direccion && (
+                    <span className="ml-1 text-slate-500">· {c.direccion}</span>
+                  )}
                   {c.peor_atraso > 0 && (
                     <span className="ml-1 text-red-600">· {c.peor_atraso} días de atraso</span>
                   )}
