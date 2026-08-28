@@ -42,6 +42,8 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 
 | `etiquetas_y_no_pagada` | **Etiquetas de color, y "no pagada" que deja limpio.** Marcar una factura como no pagada soltaba el cobro y lo dejaba sin imputar; alguien lo veía flotando en la lista de pagos por asignar y lo volvía a imputar a la misma factura, que regresaba al estado incoherente (pasó con la 34859: corregida a las 00:52, de vuelta a las 03:12). Ahora se borra el cobro que queda sin nada imputado —si cubría otras facturas se conserva— y se informa cuál era; queda en `audit_logs` con monto, fecha y motivo. Se agregan `invoices.etiqueta` (revisar / problema / esperando / lista, con restricción), su nota, y `etiquetar_factura()`: una marca de color para volver a las facturas que hay que corroborar, sin tocar ningún número. |
 
+| `nombre_razon_social_y_rut` | **Los tres datos de un cliente, en todas partes.** Nombre de fantasía, razón social y RUT sirven para cosas distintas —reconocer el local, cuadrar con la factura, cuadrar con el SII y con la cartola— y estaban repartidos de forma arbitraria: unas vistas traían solo el nombre, otras el nombre y el RUT, y una sola las tres, justo donde no se concilia. Se agregan `rut` y `razon_social` a `v_cuentas_por_cobrar` y `v_cuentas_por_pagar`, y `razon_social` a `v_estado_cuenta_cliente`, `v_pagos_detalle` y `v_comportamiento_pago_cliente`. Todas al final, que es lo único que permite `create or replace view`. |
+
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 
 ## Sincronizar los archivos locales con la base

@@ -323,6 +323,8 @@ export interface CuentaPorCobrar {
   /** Marca de color para revisión manual. */
   etiqueta: string | null
   etiqueta_nota: string | null
+  rut: string | null
+  razon_social: string | null
 }
 
 export interface EstadoCuentaCliente {
@@ -352,6 +354,8 @@ export interface EstadoCuentaCliente {
   sobre_limite: boolean
   /** Dirección del local. Separa dos fichas que comparten RUT. */
   direccion: string | null
+  /** El nombre con el que se emite la factura, cuando difiere del de fantasía. */
+  razon_social: string | null
 }
 
 export interface PagoSinImputar {
@@ -476,6 +480,7 @@ export interface PagoDetalle {
   dias_vs_vencimiento: number | null
   /** La factura se saldó con una nota de crédito, no con un pago. */
   es_nota_credito: boolean
+  razon_social: string | null
 }
 
 /** Cuánto se demora un cliente en pagar, y con cuánta regularidad. */
@@ -505,6 +510,7 @@ export interface ComportamientoPago {
   espera_maxima: number | null
   espera_promedio: number | null
   exceso_sobre_plazo: number | null
+  razon_social: string | null
 }
 
 /** Un mes que tiene movimiento, para poblar los selectores sin ofrecer meses vacíos. */

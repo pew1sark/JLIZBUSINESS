@@ -12,7 +12,7 @@ import { descargarCsv } from '../../lib/csv'
 import { FiltroPeriodo } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
 import { ReporteCobro } from '../../components/ReporteCobro'
-import { Card, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { Card, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap, NombreEntidad } from '../../components/ui'
 
 interface Kpis {
   venta_mes: number
@@ -50,6 +50,8 @@ interface Cobrar {
   dias_atraso: number
   tramo: 'sin_plazo' | 'al_dia' | 'atraso_leve' | 'atraso_medio' | 'atraso_grave'
   invoice_number: string | null
+  rut: string | null
+  razon_social: string | null
 }
 
 interface Pagar {
@@ -73,6 +75,8 @@ interface Pagar {
   dte_type: number | null
   amount_paid: number
   dias_atraso: number
+  rut: string | null
+  razon_social: string | null
 }
 
 interface Margen {
@@ -433,6 +437,7 @@ export function Finanzas() {
               <thead className="bg-slate-50">
                 <tr>
                   <th className="th">Cliente</th>
+                  <th className="th">RUT</th>
                   <th className="th">Pedido</th>
                   <th className="th">Vence</th>
                   <th className="th">Saldo</th>
@@ -450,7 +455,11 @@ export function Finanzas() {
                         title="Armar el reporte de cobro de este cliente">
                         {c.cliente}
                       </button>
+                      {c.razon_social && c.razon_social.toLowerCase() !== c.cliente.toLowerCase() && (
+                        <p className="text-xs text-slate-400">{c.razon_social}</p>
+                      )}
                     </td>
+                    <td className="td tabular-nums text-slate-500">{c.rut ?? '—'}</td>
                     <td className="td">
                       <p className="font-mono text-xs">{c.code}</p>
                       {c.origen === 'saldo_inicial' && (
@@ -519,6 +528,7 @@ export function Finanzas() {
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="th">Proveedor</th>
+                    <th className="th">RUT</th>
                     <th className="th">Documento</th>
                     <th className="th">Fecha</th>
                     <th className="th text-right">Neto</th>
@@ -535,7 +545,10 @@ export function Finanzas() {
                     const nc = p.origen === 'nota_credito'
                     return (
                       <tr key={p.ref_id} className={clsx('hover:bg-slate-50', nc && 'bg-emerald-50/40')}>
-                        <td className="td font-medium text-slate-900">{p.proveedor}</td>
+                        <td className="td">
+                          <NombreEntidad nombre={p.proveedor} razonSocial={p.razon_social} />
+                        </td>
+                        <td className="td tabular-nums text-slate-500">{p.rut ?? '—'}</td>
                         <td className="td">
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono text-xs">{p.invoice_number ?? p.code}</span>

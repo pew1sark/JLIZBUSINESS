@@ -199,6 +199,7 @@ export function Compras() {
               <tr>
                 <th className="th">Compra</th>
                 <th className="th">Proveedor</th>
+                <th className="th">RUT</th>
                 <th className="th">Fecha</th>
                 <th className="th">Neto + costos</th>
                 <th className="th">Total</th>
@@ -218,8 +219,9 @@ export function Compras() {
                   </td>
                   <td className="td">
                     <NombreEntidad nombre={c.suppliers?.name}
-                      razonSocial={c.suppliers?.company} rut={c.suppliers?.rut} />
+                      razonSocial={c.suppliers?.company} />
                   </td>
+                  <td className="td tabular-nums text-slate-500">{c.suppliers?.rut ?? '—'}</td>
                   <td className="td text-slate-500">{dateShort(c.purchase_date)}</td>
                   <td className="td text-xs text-slate-500">
                     {money(c.subtotal)} + {money(Number(c.freight_cost) + Number(c.other_costs))}

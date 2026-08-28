@@ -216,11 +216,12 @@ export function Ventas() {
   }
 
   function exportar() {
-    const filas = [['Pedido', 'Fecha', 'Cliente', 'Estado', 'Neto', 'IVA', 'Total con IVA', 'Pagado', 'Saldo', 'Factura']]
+    const filas = [['Pedido', 'Fecha', 'Cliente', 'Razón social', 'RUT', 'Estado', 'Neto', 'IVA', 'Total con IVA', 'Pagado', 'Saldo', 'Factura']]
     for (const o of filtradas) {
       const ivaMonto = Math.round(Number(o.total) * (iva / 100))
       filas.push([
-        o.code, dateShort(o.order_date), o.customers?.name ?? '', ORDER_STATUS_LABEL[o.status],
+        o.code, dateShort(o.order_date), o.customers?.name ?? '',
+        o.customers?.company ?? '', o.customers?.rut ?? '', ORDER_STATUS_LABEL[o.status],
         String(o.total), String(ivaMonto), String(Number(o.total) + ivaMonto),
         String(o.amount_paid), String(Number(o.total) - Number(o.amount_paid)), o.invoice_number ?? '',
       ])
@@ -355,6 +356,7 @@ export function Ventas() {
                 <tr>
                   <th className="th">Documento</th>
                   <th className="th">Cliente</th>
+                  <th className="th">RUT</th>
                   <th className="th">Emitida</th>
                   <th className="th">Vence</th>
                   <th className="th text-right">Neto</th>
@@ -377,8 +379,9 @@ export function Ventas() {
                       </td>
                       <td className="td">
                         <NombreEntidad nombre={f.customers?.name}
-                          razonSocial={f.customers?.company} rut={f.customers?.rut} />
+                          razonSocial={f.customers?.company} />
                       </td>
+                      <td className="td tabular-nums text-slate-500">{f.customers?.rut ?? '—'}</td>
                       <td className="td text-slate-500">{dateShort(f.issued_at)}</td>
                       <td className="td text-slate-500">{dateShort(f.due_date)}</td>
                       <td className="td text-right tabular-nums text-slate-500">{money(f.net_amount)}</td>
@@ -428,6 +431,7 @@ export function Ventas() {
             <tr>
               <th className="th">Pedido</th>
               <th className="th">Cliente</th>
+              <th className="th">RUT</th>
               <th className="th">Fecha</th>
               <th className="th">Estado</th>
               <th className="th">Neto</th>
@@ -445,8 +449,9 @@ export function Ventas() {
                   <td className="td font-mono text-xs">{o.code}</td>
                   <td className="td">
                     <NombreEntidad nombre={o.customers?.name}
-                      razonSocial={o.customers?.company} rut={o.customers?.rut} />
+                      razonSocial={o.customers?.company} />
                   </td>
+                  <td className="td tabular-nums text-slate-500">{o.customers?.rut ?? '—'}</td>
                   <td className="td text-slate-500">{dateShort(o.order_date)}</td>
                   <td className="td">
                     <span className={`badge ${ORDER_STATUS_STYLE[o.status]}`}>{ORDER_STATUS_LABEL[o.status]}</span>

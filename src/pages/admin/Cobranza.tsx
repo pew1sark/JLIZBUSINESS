@@ -21,7 +21,7 @@ import { DetalleFactura, type FacturaRef } from '../../components/DetalleFactura
 import { CorregirFactura } from '../../components/CorregirFactura'
 import { PuntoEtiqueta } from '../../components/EtiquetaFactura'
 import {
-  Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap,
+  Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap, NombreEntidad,
 } from '../../components/ui'
 
 const TRAMO: Record<string, { label: string; clase: string }> = {
@@ -363,11 +363,11 @@ export function Cobranza() {
 
   function exportarCartera() {
     const filas: (string | number)[][] = [[
-      'Cliente', 'RUT', 'Documentos', 'Deuda total', 'Por vencer', '1-15 días', '16-30 días',
+      'Cliente', 'Razón social', 'RUT', 'Documentos', 'Deuda total', 'Por vencer', '1-15 días', '16-30 días',
       '31-60 días', '+60 días', 'Peor atraso', 'Nota de crédito', 'Pago a cuenta', 'Saldo neto',
     ]]
     for (const c of clientesFiltrados) {
-      filas.push([c.cliente, c.rut ?? '', c.documentos, c.deuda_total, c.por_vencer, c.atraso_1_15,
+      filas.push([c.cliente, c.razon_social ?? '', c.rut ?? '', c.documentos, c.deuda_total, c.por_vencer, c.atraso_1_15,
         c.atraso_16_30, c.atraso_31_60, c.atraso_60_mas, c.peor_atraso, c.nota_credito,
         c.pago_a_cuenta, c.saldo_neto])
     }
@@ -376,10 +376,10 @@ export function Cobranza() {
 
   function exportarDocumentos() {
     const filas: (string | number)[][] = [[
-      'Documento', 'Tipo', 'Cliente', 'Emitida', 'Vence', 'Total', 'Pagado', 'Saldo', 'Días de atraso',
+      'Documento', 'Tipo', 'Cliente', 'Razón social', 'RUT', 'Emitida', 'Vence', 'Total', 'Pagado', 'Saldo', 'Días de atraso',
     ]]
     for (const d of documentosFiltrados) {
-      filas.push([d.doc_number ?? d.code, d.doc_type, d.cliente, d.issued_at, d.due_date ?? '',
+      filas.push([d.doc_number ?? d.code, d.doc_type, d.cliente, d.razon_social ?? '', d.rut ?? '', d.issued_at, d.due_date ?? '',
         d.total, d.amount_paid, d.saldo, d.dias_atraso])
     }
     descargarCsv(filas, 'documentos-por-cobrar')
@@ -387,13 +387,13 @@ export function Cobranza() {
 
   function exportarFacturas() {
     const filas: (string | number)[][] = [[
-      'Documento', 'Tipo', 'Cliente', 'RUT', 'Emitida', 'Vence', 'Neto', 'IVA', 'Total',
+      'Documento', 'Tipo', 'Cliente', 'Razón social', 'RUT', 'Emitida', 'Vence', 'Neto', 'IVA', 'Total',
       'Pagado', 'Saldo', 'Estado', 'Fecha de pago', 'N° de pagos', 'Forma de pago',
       'Días en pagar', 'Días vs. plazo', 'Días esperando',
     ]]
     for (const f of facturasFiltradas) {
       filas.push([
-        f.doc_number, f.doc_type, f.cliente, f.rut ?? '', f.issued_at, f.due_date ?? '',
+        f.doc_number, f.doc_type, f.cliente, f.razon_social ?? '', f.rut ?? '', f.issued_at, f.due_date ?? '',
         f.net_amount, f.tax_amount, f.total, f.amount_paid, f.saldo, f.payment_status,
         f.ultimo_pago ?? '', f.n_pagos, f.metodos ?? '',
         f.dias_en_pagar ?? '', f.dias_vs_plazo ?? '', f.dias_esperando ?? '',
@@ -404,7 +404,7 @@ export function Cobranza() {
 
   function exportarComportamiento() {
     const filas: (string | number)[][] = [[
-      'Cliente', 'RUT', 'Plazo pactado', 'Facturas emitidas', 'Monto facturado',
+      'Cliente', 'Razón social', 'RUT', 'Plazo pactado', 'Facturas emitidas', 'Monto facturado',
       'Facturas pagadas', 'Monto pagado', 'Días promedio', 'Días mediana', 'Días mínimo',
       'Días máximo', 'Desviación', 'Promedio últimos 90 días', 'Exceso sobre el plazo',
       'Pagadas a tiempo', 'Pagadas fuera de plazo', '% a tiempo',
@@ -412,7 +412,7 @@ export function Cobranza() {
     ]]
     for (const c of comportamientoFiltrado) {
       filas.push([
-        c.cliente, c.rut ?? '', c.plazo_pactado, c.facturas_totales, c.monto_total,
+        c.cliente, c.razon_social ?? '', c.rut ?? '', c.plazo_pactado, c.facturas_totales, c.monto_total,
         c.facturas_pagadas, c.monto_pagado, c.dias_promedio ?? '', c.dias_mediana ?? '',
         c.dias_minimo ?? '', c.dias_maximo ?? '', c.dias_desviacion ?? '',
         c.dias_promedio_90d ?? '', c.exceso_sobre_plazo ?? '',
@@ -658,6 +658,7 @@ function TablaClientes({
       <thead>
         <tr>
           <th className="th">Cliente</th>
+          <th className="th">RUT</th>
           <th className="th text-right">Docs</th>
           <th className="th text-right">Por vencer</th>
           <th className="th text-right">1-15 d</th>
@@ -679,8 +680,11 @@ function TablaClientes({
                   className="text-left font-medium text-navy-900 hover:text-sea-600">
                   {c.cliente}
                 </button>
+                {c.razon_social && c.razon_social.toLowerCase() !== c.cliente.toLowerCase() && (
+                  <p className="text-xs text-slate-400">{c.razon_social}</p>
+                )}
                 <p className="text-xs text-slate-400">
-                  {c.rut} · {c.payment_terms_days} días
+                  {c.payment_terms_days} días
                   {/* Un mismo RUT con dos fichas son dos locales de la misma
                       empresa; sin la dirección parecen un duplicado. */}
                   {rutRepetido.has(c.rut ?? '') && c.direccion && (
@@ -691,6 +695,7 @@ function TablaClientes({
                   )}
                 </p>
               </td>
+              <td className="td tabular-nums text-slate-500">{c.rut ?? '—'}</td>
               <td className="td text-right tabular-nums text-slate-500">{c.documentos}</td>
               <td className="td text-right tabular-nums text-slate-500">{corto(c.por_vencer)}</td>
               <td className="td text-right tabular-nums text-amber-700">{corto(c.atraso_1_15)}</td>
@@ -750,6 +755,7 @@ function TablaDocumentos({
         <tr>
           <th className="th">Documento</th>
           <th className="th">Cliente</th>
+          <th className="th">RUT</th>
           <th className="th">Emitida</th>
           <th className="th">Vence</th>
           <th className="th text-right">Total</th>
@@ -775,7 +781,10 @@ function TablaDocumentos({
                 {d.invoice_id && <span className="ml-1 text-slate-300">· ver detalle</span>}
               </p>
             </td>
-            <td className="td text-slate-600">{d.cliente}</td>
+            <td className="td">
+              <NombreEntidad nombre={d.cliente} razonSocial={d.razon_social} />
+            </td>
+            <td className="td tabular-nums text-slate-500">{d.rut ?? '—'}</td>
             <td className="td text-slate-500">{dateShort(d.issued_at)}</td>
             <td className="td text-slate-500">{dateShort(d.due_date)}</td>
             <td className="td text-right tabular-nums text-slate-500">{money(d.total)}</td>
@@ -862,7 +871,10 @@ function TablaFacturas({
                 </p>
                 <p className="text-xs text-slate-400">{etiquetaDoc(f.doc_type)}</p>
               </td>
-              <td className="td font-medium text-slate-800">{f.cliente}</td>
+              <td className="td">
+                <NombreEntidad nombre={f.cliente} razonSocial={f.razon_social} />
+              </td>
+              <td className="td tabular-nums text-slate-500">{f.rut ?? '—'}</td>
               <td className="td text-slate-500">{dateShort(f.issued_at)}</td>
               <td className="td text-slate-500">{dateShort(f.due_date)}</td>
               <td className={clsx('td text-right tabular-nums', esNC && 'text-emerald-600')}>
@@ -977,6 +989,7 @@ function TablaComportamiento({
         <thead className="bg-slate-50">
           <tr>
             <ThOrden campo="cliente" orden={orden} onOrden={onOrden} porDefecto="asc">Cliente</ThOrden>
+            <th className="th">RUT</th>
             <th className="th text-right">Plazo</th>
             <ThOrden campo="dias_promedio" orden={orden} onOrden={onOrden} className="text-right">Días promedio</ThOrden>
             <ThOrden campo="mediana" orden={orden} onOrden={onOrden} className="text-right">Mediana</ThOrden>
@@ -1004,11 +1017,14 @@ function TablaComportamiento({
                     title="Ver las facturas de este cliente">
                     {c.cliente}
                   </button>
+                  {c.razon_social && c.razon_social.toLowerCase() !== c.cliente.toLowerCase() && (
+                    <p className="text-xs text-slate-400">{c.razon_social}</p>
+                  )}
                   <p className="text-xs text-slate-400">
                     {c.facturas_pagadas} de {c.facturas_totales} facturas pagadas
-                    {c.rut && ` · ${c.rut}`}
                   </p>
                 </td>
+                <td className="td tabular-nums text-slate-500">{c.rut ?? '—'}</td>
                 <td className="td text-right tabular-nums text-slate-500">{c.plazo_pactado} d</td>
                 <td className="td text-right">
                   {c.dias_promedio === null
@@ -1150,14 +1166,14 @@ function InformeFechasPago() {
 
   function exportar() {
     const f: (string | number)[][] = [[
-      'Fecha de pago', 'Cobro', 'Cliente', 'RUT', 'Documento', 'Emitido', 'Vence',
+      'Fecha de pago', 'Cobro', 'Cliente', 'Razón social', 'RUT', 'Documento', 'Emitido', 'Vence',
       'Total del documento', 'Monto imputado', 'Monto del cobro', 'Forma de pago',
       'N° de operación', 'Días desde la emisión', 'Días vs. vencimiento', 'Nota',
       '¿Es nota de crédito?',
     ]]
     for (const d of filas) {
       f.push([
-        d.fecha_pago, d.pago_code, d.cliente, d.rut ?? '', d.documento ?? '',
+        d.fecha_pago, d.pago_code, d.cliente, d.razon_social ?? '', d.rut ?? '', d.documento ?? '',
         d.emitido ?? '', d.vence ?? '', d.total_documento ?? '', d.monto_imputado ?? '',
         d.monto_pago, d.metodo, d.reference ?? '',
         d.dias_desde_emision ?? '', d.dias_vs_vencimiento ?? '', d.notes ?? '',
@@ -1234,6 +1250,7 @@ function InformeFechasPago() {
                   <tr>
                     <th className="th">Fecha de pago</th>
                     <th className="th">Cliente</th>
+                    <th className="th">RUT</th>
                     <th className="th">Documento</th>
                     <th className="th">Emitido</th>
                     <th className="th">Vence</th>
@@ -1250,7 +1267,10 @@ function InformeFechasPago() {
                         <p className="font-medium text-navy-900">{dateShort(d.fecha_pago)}</p>
                         <p className="text-xs text-slate-400">{d.pago_code}</p>
                       </td>
-                      <td className="td font-medium text-slate-800">{d.cliente}</td>
+                      <td className="td">
+                        <NombreEntidad nombre={d.cliente} razonSocial={d.razon_social} />
+                      </td>
+                      <td className="td tabular-nums text-slate-500">{d.rut ?? '—'}</td>
                       <td className="td">
                         {d.documento ?? <span className="text-amber-600">sin imputar</span>}
                       </td>
