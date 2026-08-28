@@ -29,7 +29,17 @@ const PRESUPUESTO_URL = 1900
 export function mensajeCobro(
   cliente: string,
   docs: DocDeuda[],
-  opts: { soloVencido: boolean; empresa: string; deudaTotal: number },
+  opts: {
+    soloVencido: boolean
+    empresa: string
+    deudaTotal: number
+    /**
+     * El recorte existe solo por el límite de la URL de WhatsApp. Por correo
+     * sobra: cortar la lista ahí dejaría al cliente con un detalle incompleto
+     * sin ninguna razón.
+     */
+    sinRecorte?: boolean
+  },
 ): string {
   const monto = docs.reduce((a, d) => a + Number(d.saldo), 0)
   const linea = (d: DocDeuda) => {
@@ -77,6 +87,7 @@ export function mensajeCobro(
   // presupuesto y con 40 facturas WhatsApp cortaba la lista en silencio.
   let n = docs.length
   let texto = armar(n)
+  if (opts.sinRecorte) return texto
   while (n > 1 && encodeURIComponent(texto).length > PRESUPUESTO_URL) {
     n -= 1
     texto = armar(n)

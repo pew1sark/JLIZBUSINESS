@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
-  Activity, AlertTriangle, Check, Database, History, Lock, Plug, RefreshCw, Wrench,
+  Activity, AlertTriangle, Check, Database, History, Lock, Mail, Plug, RefreshCw, Wrench,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext'
 import { dateTime, money } from '../../lib/format'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui'
 import { CorteAnalisis } from '../../components/CorteAnalisis'
+import { CorreoSaliente } from '../../components/CorreoSaliente'
 import { BsaleConexion } from './BsaleConexion'
 import { PuestaEnMarcha } from './PuestaEnMarcha'
 
@@ -144,6 +145,13 @@ export function Soporte() {
             <Plug className="h-4 w-4 text-slate-400" /> Integraciones
           </h2>
           <BsaleConexion />
+        </div>
+
+        <div>
+          <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <Mail className="h-4 w-4 text-slate-400" /> Correo
+          </h2>
+          <CorreoSaliente />
         </div>
 
         <div>

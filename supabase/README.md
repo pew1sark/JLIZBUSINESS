@@ -44,6 +44,8 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 
 | `nombre_razon_social_y_rut` | **Los tres datos de un cliente, en todas partes.** Nombre de fantasía, razón social y RUT sirven para cosas distintas —reconocer el local, cuadrar con la factura, cuadrar con el SII y con la cartola— y estaban repartidos de forma arbitraria: unas vistas traían solo el nombre, otras el nombre y el RUT, y una sola las tres, justo donde no se concilia. Se agregan `rut` y `razon_social` a `v_cuentas_por_cobrar` y `v_cuentas_por_pagar`, y `razon_social` a `v_estado_cuenta_cliente`, `v_pagos_detalle` y `v_comportamiento_pago_cliente`. Todas al final, que es lo único que permite `create or replace view`. |
 
+| `rol_soporte` + `correo_saliente` | **Separar al soporte del administrador, y correo propio.** `soporte` es un superconjunto de `admin` —pasa por `is_admin()`, así que no pierde nada— y además ve lo técnico; el rol no se asigna desde la pantalla de cuentas, se cambia en la base. `soporte_estado()` arma el panel de /soporte con el pulso de cada módulo y cuatro chequeos de integridad. Y el correo saliente: `correo_clave_set/get`, `correo_estado` y la tabla `correos_enviados`, para que el reporte de cobro salga desde la casilla de la empresa con la clave en Vault. |
+
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 
 ## Sincronizar los archivos locales con la base
