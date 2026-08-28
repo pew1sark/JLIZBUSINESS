@@ -320,6 +320,9 @@ export interface CuentaPorCobrar {
   invoice_number: string | null
   dias_atraso: number
   tramo: TramoAtraso
+  /** Marca de color para revisión manual. */
+  etiqueta: string | null
+  etiqueta_nota: string | null
 }
 
 export interface EstadoCuentaCliente {
@@ -445,6 +448,9 @@ export interface FacturaConPago {
   estado_forzado_at: string | null
   /** El nombre con el que se emite la factura, cuando difiere del de fantasía. */
   razon_social: string | null
+  /** Marca de color para revisión manual. No afecta ningún cálculo. */
+  etiqueta: string | null
+  etiqueta_nota: string | null
 }
 
 /** Una línea del informe de fechas de pago: este día entró plata y cubrió este documento. */

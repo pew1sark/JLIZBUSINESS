@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, FileText, Receipt, Search, Wallet } from 'lucide-react'
+import clsx from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useOperacion } from '../../lib/queries'
 import type { Invoice, Order, PaymentMethod } from '../../lib/types'
@@ -13,6 +14,8 @@ import { descargarCsv } from '../../lib/csv'
 import { FiltroPeriodo, Paginador } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
 import { Card, EmptyState, ErrorState, Modal, NombreEntidad, PageHeader, Pestanas, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { SelectorEtiqueta } from '../../components/EtiquetaFactura'
+import { ETIQUETAS, type Etiqueta } from '../../lib/etiquetas'
 import { DetalleFactura } from '../../components/DetalleFactura'
 
 /**
@@ -27,6 +30,8 @@ interface FacturaFila extends Invoice {
     id: string; name: string; comuna: string | null
     company: string | null; rut: string | null
   } | null
+  etiqueta: string | null
+  etiqueta_nota: string | null
 }
 
 const DOC_LABEL: Record<string, string> = {
@@ -45,6 +50,7 @@ export function Ventas() {
   const [fuente, setFuente] = useState<Fuente>('facturas')
   const [verFactura, setVerFactura] = useState<FacturaFila | null>(null)
   const [soloDeuda, setSoloDeuda] = useState(false)
+  const [etiqueta, setEtiqueta] = useState<'todas' | 'marcadas' | Etiqueta>('todas')
   const [cobrar, setCobrar] = useState<Order | null>(null)
   const [factura, setFactura] = useState<Order | null>(null)
 
@@ -99,17 +105,24 @@ export function Ventas() {
     return (facturas.data ?? []).filter((f) => {
       if (soloDeuda && f.payment_status === 'pagado') return false
       if (estadoPago !== 'todos' && f.payment_status !== estadoPago) return false
+      if (etiqueta === 'marcadas' && !f.etiqueta) return false
+      if (etiqueta !== 'todas' && etiqueta !== 'marcadas' && f.etiqueta !== etiqueta) return false
       if (q && !f.doc_number.toLowerCase().includes(q)
             && !(f.customers?.name ?? '').toLowerCase().includes(q)
             && !(f.customers?.company ?? '').toLowerCase().includes(q)
             && !(f.customers?.rut ?? '').toLowerCase().includes(q)) return false
       return true
     })
-  }, [facturas.data, soloDeuda, estadoPago, buscar])
+  }, [facturas.data, soloDeuda, estadoPago, buscar, etiqueta])
+
+  const hayEtiquetas = useMemo(
+    () => (facturas.data ?? []).some((f) => !!f.etiqueta),
+    [facturas.data],
+  )
 
   // La página se reinicia al cambiar cualquier filtro: quedarse en la
   // página 7 de un resultado que ahora tiene 2 confunde.
-  useEffect(() => { setPagina(0) }, [desdeFecha, hastaFecha, buscar, estadoPago, soloDeuda, fuente])
+  useEffect(() => { setPagina(0) }, [desdeFecha, hastaFecha, buscar, estadoPago, soloDeuda, fuente, etiqueta])
 
   const facturasPagina = useMemo(
     () => facturasFiltradas.slice(pagina * porPagina, (pagina + 1) * porPagina),
@@ -299,6 +312,32 @@ export function Ventas() {
         </label>
       </div>
 
+      {/* Las etiquetas solo aparecen si hay alguna puesta: sin facturas marcadas
+          la fila de filtros sería una hilera de botones que no hacen nada. */}
+      {fuente === 'facturas' && hayEtiquetas && (
+        <div className="flex flex-wrap items-center gap-1">
+          {([['todas', 'Todas'], ['marcadas', 'Marcadas']] as const).map(([k, label]) => (
+            <button key={k} type="button" onClick={() => setEtiqueta(k)}
+              className={clsx('rounded-full px-3 py-1 text-xs font-medium',
+                etiqueta === k ? 'bg-navy-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>
+              {label}
+            </button>
+          ))}
+          {(Object.keys(ETIQUETAS) as Etiqueta[]).map((k) => {
+            const n = (facturas.data ?? []).filter((f) => f.etiqueta === k).length
+            if (n === 0) return null
+            return (
+              <button key={k} type="button" onClick={() => setEtiqueta(k)}
+                className={clsx('flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium',
+                  etiqueta === k ? 'bg-navy-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>
+                <span className={clsx('h-2 w-2 rounded-full', ETIQUETAS[k].punto)} />
+                {ETIQUETAS[k].label} <span className="opacity-60">{n}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {fuente === 'facturas' && (
         <>
           {facturas.isError && <ErrorState error={facturas.error} />}
@@ -322,6 +361,7 @@ export function Ventas() {
                   <th className="th text-right">Total</th>
                   <th className="th text-right">Saldo</th>
                   <th className="th">Pago</th>
+                  <th className="th"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -352,6 +392,12 @@ export function Ventas() {
                         <span className={`badge ${PAYMENT_STATUS_STYLE[f.payment_status]}`}>
                           {PAYMENT_STATUS_LABEL[f.payment_status]}
                         </span>
+                      </td>
+                      {/* La fila entera abre el detalle, así que el selector
+                          para su propio clic (lo hace internamente). */}
+                      <td className="td py-1">
+                        <SelectorEtiqueta invoiceId={f.id} actual={f.etiqueta}
+                          notaActual={f.etiqueta_nota} />
                       </td>
                     </tr>
                   )

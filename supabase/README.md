@@ -40,6 +40,8 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 
 | `forzar_estado_mueve_la_plata` | **Arregla un defecto de `corregir_factura`.** Forzar el estado cambiaba `payment_status` y nada más, pero la deuda no sale del estado sino del saldo: marcar una factura como "pendiente" con su cobro todavía imputado la dejaba en saldo cero y no aparecía en cuentas por cobrar —la etiqueta decía una cosa y la plata otra—. Ahora forzar 'pendiente' o 'vencido' suelta las imputaciones (el cobro no se borra: queda sin imputar, para reasignarlo o darlo de baja) y forzar 'pagado' saca la factura de `v_cuentas_por_cobrar` aunque le quede saldo. Las notas de crédito nunca se sueltan. |
 
+| `etiquetas_y_no_pagada` | **Etiquetas de color, y "no pagada" que deja limpio.** Marcar una factura como no pagada soltaba el cobro y lo dejaba sin imputar; alguien lo veía flotando en la lista de pagos por asignar y lo volvía a imputar a la misma factura, que regresaba al estado incoherente (pasó con la 34859: corregida a las 00:52, de vuelta a las 03:12). Ahora se borra el cobro que queda sin nada imputado —si cubría otras facturas se conserva— y se informa cuál era; queda en `audit_logs` con monto, fecha y motivo. Se agregan `invoices.etiqueta` (revisar / problema / esperando / lista, con restricción), su nota, y `etiquetar_factura()`: una marca de color para volver a las facturas que hay que corroborar, sin tocar ningún número. |
+
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 
 ## Sincronizar los archivos locales con la base

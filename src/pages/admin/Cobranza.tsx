@@ -19,6 +19,7 @@ import { nombreMes, rangoDe, type Periodo } from '../../lib/periodo'
 import { ReporteCobro } from '../../components/ReporteCobro'
 import { DetalleFactura, type FacturaRef } from '../../components/DetalleFactura'
 import { CorregirFactura } from '../../components/CorregirFactura'
+import { PuntoEtiqueta } from '../../components/EtiquetaFactura'
 import {
   Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap,
 } from '../../components/ui'
@@ -855,7 +856,10 @@ function TablaFacturas({
               onClick={() => onVer({ id: f.invoice_id, doc_type: f.doc_type,
                 doc_number: f.doc_number, cliente: f.cliente })}>
               <td className="td">
-                <p className="font-medium text-navy-900">{f.doc_number}</p>
+                <p className="flex items-center gap-1.5 font-medium text-navy-900">
+                  <PuntoEtiqueta etiqueta={f.etiqueta} nota={f.etiqueta_nota} />
+                  {f.doc_number}
+                </p>
                 <p className="text-xs text-slate-400">{etiquetaDoc(f.doc_type)}</p>
               </td>
               <td className="td font-medium text-slate-800">{f.cliente}</td>
@@ -2054,7 +2058,8 @@ function SelectorFacturas({
                 })} />
 
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-slate-800">
+                <p className="flex items-center gap-1.5 text-sm font-medium text-slate-800">
+                  <PuntoEtiqueta etiqueta={d.etiqueta} nota={d.etiqueta_nota} />
                   {d.doc_number ?? d.code}
                   {parcial && (
                     <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
@@ -2102,7 +2107,10 @@ function SelectorFacturas({
             className="flex items-center gap-3 border-b border-slate-50 px-4 py-2.5">
             <Check className="h-4 w-4 shrink-0 text-emerald-500" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-slate-800">{h.doc_number}</p>
+              <p className="flex items-center gap-1.5 text-sm font-medium text-slate-800">
+                <PuntoEtiqueta etiqueta={h.etiqueta} nota={h.etiqueta_nota} />
+                {h.doc_number}
+              </p>
               <p className="text-xs text-slate-400">
                 Emitida {dateShort(h.issued_at)}
                 {h.ultimo_pago
