@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MessageCircle, Pencil, Phone, Plus, Star, Search } from 'lucide-react'
+import { MessageCircle, Pencil, Phone, Plus, Star, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useSuppliers } from '../../lib/queries'
 import type { Supplier } from '../../lib/types'
 import { dateShort, money } from '../../lib/format'
 import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, TableWrap } from '../../components/ui'
+import { QuitarEntidad, type EntidadAQuitar } from '../../components/QuitarEntidad'
 
 interface Form {
   id?: string
@@ -30,16 +31,21 @@ const vacio: Form = {
 
 export function Proveedores() {
   const qc = useQueryClient()
-  const proveedores = useSuppliers()
+  const proveedores = useSuppliers(false)
   const [form, setForm] = useState<Form | null>(null)
   const [detalle, setDetalle] = useState<Supplier | null>(null)
   const [buscar, setBuscar] = useState('')
+  const [quitar, setQuitar] = useState<EntidadAQuitar | null>(null)
+  const [verEstado, setVerEstado] = useState<'activos' | 'inactivos' | 'todos'>('activos')
 
   // Con 62 proveedores una lista plana ya no se recorre a ojo. Se busca
   // por RUT además del nombre: es lo que aparece en la factura.
   const filtrados = useMemo(() => {
     const t = buscar.trim().toLowerCase()
-    const lista = proveedores.data ?? []
+    const lista = (proveedores.data ?? []).filter((s) =>
+      verEstado === 'todos' ? true
+      : verEstado === 'activos' ? s.status === 'activo'
+      : s.status !== 'activo')
     if (!t) return lista
     return lista.filter((s) =>
       s.name.toLowerCase().includes(t)
@@ -48,7 +54,7 @@ export function Proveedores() {
       || (s.email ?? '').toLowerCase().includes(t)
       || (s.phone ?? '').toLowerCase().includes(t)
       || (s.comuna ?? '').toLowerCase().includes(t))
-  }, [proveedores.data, buscar])
+  }, [proveedores.data, buscar, verEstado])
 
   const compras = useQuery({
     queryKey: ['supplier-totals'],
@@ -136,6 +142,12 @@ export function Proveedores() {
               <input className="input w-56 pl-9" placeholder="Buscar nombre o RUT…"
                 value={buscar} onChange={(e) => setBuscar(e.target.value)} />
             </div>
+            <select className="input w-auto" value={verEstado}
+              onChange={(e) => setVerEstado(e.target.value as typeof verEstado)}>
+              <option value="activos">Activos</option>
+              <option value="inactivos">Desactivados</option>
+              <option value="todos">Todos</option>
+            </select>
             <button onClick={() => setForm(vacio)} className="btn-primary">
               <Plus className="h-4 w-4" /> Nuevo proveedor
             </button>
@@ -175,10 +187,15 @@ export function Proveedores() {
             {filtrados.map((s) => {
               const t = compras.data?.[s.id]
               return (
-                <tr key={s.id} className="hover:bg-slate-50">
+                <tr key={s.id} className={`hover:bg-slate-50 ${s.status !== 'activo' ? 'opacity-60' : ''}`}>
                   <td className="td">
                     <button onClick={() => setDetalle(s)} className="text-left">
-                      <p className="font-medium text-navy-800 hover:underline">{s.name}</p>
+                      <p className="font-medium text-navy-800 hover:underline">
+                        {s.name}
+                        {s.status !== 'activo' && (
+                          <span className="ml-2 badge bg-amber-100 text-amber-800">desactivado</span>
+                        )}
+                      </p>
                       <p className="text-xs text-slate-400">{s.company ?? s.rut ?? '—'}</p>
                     </button>
                   </td>
@@ -219,9 +236,16 @@ export function Proveedores() {
                       ))}
                     </span>
                   </td>
-                  <td className="td text-right">
-                    <button onClick={() => editar(s)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-navy-700">
+                  <td className="td text-right whitespace-nowrap">
+                    <button onClick={() => editar(s)} title="Editar la ficha"
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-navy-700">
                       <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setQuitar({ tipo: 'proveedor', id: s.id, nombre: s.name, estado: s.status })}
+                      title="Desactivar o eliminar"
+                      className="ml-1 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
                 </tr>
@@ -230,6 +254,9 @@ export function Proveedores() {
           </tbody>
         </TableWrap>
       )}
+
+      <QuitarEntidad entidad={quitar} onClose={() => setQuitar(null)}
+        onHecho={() => qc.invalidateQueries({ queryKey: ['suppliers'] })} />
 
       <Modal
         open={!!form}

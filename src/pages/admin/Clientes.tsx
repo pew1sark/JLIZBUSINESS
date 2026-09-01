@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MapPin, MessageCircle, Pencil, Phone, Plus, Search } from 'lucide-react'
+import { MapPin, MessageCircle, Pencil, Phone, Plus, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { geocodificarLista } from '../../lib/geo'
 import type { Customer, CustomerType } from '../../lib/types'
 import { CUSTOMER_TYPE_LABEL } from '../../lib/constants'
 import { money, moneyShort, relative } from '../../lib/format'
 import { Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { QuitarEntidad, type EntidadAQuitar } from '../../components/QuitarEntidad'
 
 interface Balance {
   customer_id: string
@@ -46,6 +47,8 @@ const vacio: Form = {
 export function Clientes() {
   const qc = useQueryClient()
   const [busca, setBusca] = useState('')
+  const [quitar, setQuitar] = useState<EntidadAQuitar | null>(null)
+  const [verEstado, setVerEstado] = useState<'activos' | 'inactivos' | 'todos'>('activos')
   const [form, setForm] = useState<Form | null>(null)
   const [ubicando, setUbicando] = useState<{ hecho: number; total: number } | null>(null)
 
@@ -119,12 +122,16 @@ export function Clientes() {
 
   const filtrados = useMemo(() => {
     const t = busca.trim().toLowerCase()
-    const lista = clientes.data ?? []
+    const lista = (clientes.data ?? []).filter((c) =>
+      verEstado === 'todos' ? true
+      : verEstado === 'activos' ? c.status === 'activo'
+      : c.status !== 'activo')
     if (!t) return lista
     return lista.filter(
-      (c) => c.name.toLowerCase().includes(t) || (c.comuna ?? '').toLowerCase().includes(t),
+      (c) => c.name.toLowerCase().includes(t) || (c.comuna ?? '').toLowerCase().includes(t)
+        || (c.rut ?? '').toLowerCase().includes(t),
     )
-  }, [clientes.data, busca])
+  }, [clientes.data, busca, verEstado])
 
   const totales = useMemo(() => {
     const b = Object.values(balances.data ?? {})
@@ -155,8 +162,15 @@ export function Clientes() {
           <>
             <div className="relative">
               <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400" />
-              <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar…" className="input w-52 pl-9" />
+              <input value={busca} onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar nombre, comuna o RUT…" className="input w-52 pl-9" />
             </div>
+            <select className="input w-auto" value={verEstado}
+              onChange={(e) => setVerEstado(e.target.value as typeof verEstado)}>
+              <option value="activos">Activos</option>
+              <option value="inactivos">Desactivados</option>
+              <option value="todos">Todos</option>
+            </select>
             <button
               onClick={() => ubicarTodos(clientes.data ?? [])}
               disabled={!!ubicando}
@@ -174,7 +188,12 @@ export function Clientes() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Clientes activos" value={String(filtrados.filter((c) => c.status === 'activo').length)} />
+        <StatCard label="Clientes activos"
+          value={String((clientes.data ?? []).filter((c) => c.status === 'activo').length)}
+          hint={(() => {
+            const n = (clientes.data ?? []).filter((c) => c.status !== 'activo').length
+            return n ? `${n} desactivado(s)` : undefined
+          })()} />
         <StatCard label="Facturado histórico" value={moneyShort(totales.facturado)} />
         <StatCard label="Por cobrar" value={moneyShort(totales.porCobrar)} tone={totales.porCobrar > 0 ? 'warning' : 'default'} />
         <StatCard label="Vencido" value={moneyShort(totales.vencido)} tone={totales.vencido > 0 ? 'danger' : 'default'} />
@@ -206,10 +225,15 @@ export function Clientes() {
                 const b = balances.data?.[c.id]
                 const sobrepasado = c.credit_limit > 0 && (b?.balance_due ?? 0) > c.credit_limit
                 return (
-                  <tr key={c.id} className="hover:bg-slate-50">
+                  <tr key={c.id} className={`hover:bg-slate-50 ${c.status !== 'activo' ? 'opacity-60' : ''}`}>
                     <td className="td">
                       <Link to={`/clientes/${c.id}`} className="block">
-                        <p className="font-medium text-navy-800 hover:underline">{c.name}</p>
+                        <p className="font-medium text-navy-800 hover:underline">
+                          {c.name}
+                          {c.status !== 'activo' && (
+                            <span className="ml-2 badge bg-amber-100 text-amber-800">desactivado</span>
+                          )}
+                        </p>
                         <p className="text-xs text-slate-400">
                           {c.comuna ?? '—'}
                           {c.latitude == null && <span className="ml-1 text-amber-600">· sin ubicación</span>}
@@ -248,9 +272,16 @@ export function Clientes() {
                       )}
                     </td>
                     <td className="td text-xs text-slate-500">{relative(b?.last_order_at)}</td>
-                    <td className="td text-right">
-                      <button onClick={() => editar(c)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-navy-700">
+                    <td className="td text-right whitespace-nowrap">
+                      <button onClick={() => editar(c)} title="Editar la ficha"
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-navy-700">
                         <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => setQuitar({ tipo: 'cliente', id: c.id, nombre: c.name, estado: c.status })}
+                        title="Desactivar o eliminar"
+                        className="ml-1 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     </td>
                   </tr>
@@ -260,6 +291,12 @@ export function Clientes() {
           </TableWrap>
         </div>
       )}
+
+      <QuitarEntidad entidad={quitar} onClose={() => setQuitar(null)}
+        onHecho={() => {
+          qc.invalidateQueries({ queryKey: ['customers'] })
+          qc.invalidateQueries({ queryKey: ['customers-select'] })
+        }} />
 
       <Modal
         open={!!form}

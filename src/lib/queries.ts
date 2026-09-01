@@ -45,10 +45,21 @@ export const useStock = () =>
     },
   })
 
-export const useSuppliers = () =>
+/**
+ * Por defecto solo los activos: un proveedor desactivado no debe ofrecerse al
+ * crear una compra. La pantalla de Proveedores pide la lista completa para poder
+ * verlos y reactivarlos.
+ */
+export const useSuppliers = (soloActivos = true) =>
   useQuery({
-    queryKey: ['suppliers'],
-    queryFn: () => pick<Supplier>('suppliers', '*', 'name'),
+    queryKey: ['suppliers', soloActivos],
+    queryFn: async () => {
+      let q = supabase.from('suppliers').select('*').order('name')
+      if (soloActivos) q = q.eq('status', 'activo')
+      const { data, error } = await q
+      if (error) throw error
+      return data as Supplier[]
+    },
   })
 
 export const useLocations = () =>
