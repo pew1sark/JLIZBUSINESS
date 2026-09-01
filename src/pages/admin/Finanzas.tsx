@@ -13,6 +13,9 @@ import { FiltroPeriodo } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
 import { ReporteCobro } from '../../components/ReporteCobro'
 import { Card, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap, NombreEntidad } from '../../components/ui'
+import { AnalisisPagoProveedores } from '../../components/AnalisisPagoProveedores'
+import { PagosRegistrados } from '../../components/PagosRegistrados'
+import { DesgloseTributario } from '../../components/DesgloseTributario'
 
 interface Kpis {
   venta_mes: number
@@ -105,7 +108,7 @@ const TRAMO: Record<Cobrar['tramo'], { label: string; clase: string }> = {
   atraso_grave: { label: 'Atraso grave', clase: 'bg-red-100 text-red-700' },
 }
 
-type Pestana = 'cobranza' | 'pagos' | 'rentabilidad'
+type Pestana = 'cobranza' | 'pagos' | 'analisis' | 'movimientos' | 'rentabilidad'
 
 export function Finanzas() {
   const qc = useQueryClient()
@@ -274,7 +277,7 @@ export function Finanzas() {
     <>
       <PageHeader
         title="Finanzas"
-        subtitle="Cobranza, pagos a proveedores y rentabilidad real del mes"
+        subtitle="Cobranza, pagos a proveedores, comportamiento de pago y rentabilidad real"
       />
 
       {kpis.isError && <ErrorState error={kpis.error} />}
@@ -377,6 +380,8 @@ export function Finanzas() {
           opciones={[
             { id: 'cobranza', label: 'Cobranza', badge: cobrarFiltrado.length || '' },
             { id: 'pagos', label: 'Pagos a proveedores', badge: pagarFiltrado.length || '' },
+            { id: 'analisis', label: 'Análisis de pagos' },
+            { id: 'movimientos', label: 'Pagos registrados' },
             { id: 'rentabilidad', label: 'Rentabilidad' },
           ]}
         />
@@ -611,6 +616,10 @@ export function Finanzas() {
           )}
         </>
       )}
+
+      {pestana === 'analisis' && <AnalisisPagoProveedores />}
+
+      {pestana === 'movimientos' && <PagosRegistrados />}
 
       {pestana === 'rentabilidad' && <Rentabilidad />}
 
@@ -939,21 +948,15 @@ function PagoModal({
               )}
             </div>
 
-            <dl className="divide-y divide-slate-50 px-4 py-1 text-sm">
-              <Linea k="Neto de mercadería" v={money(pagar.neto_mercaderia)} />
-              {Number(pagar.total) - Number(pagar.tax_amount) - Number(pagar.neto_mercaderia) !== 0 && (
-                <Linea k="Otros conceptos de la factura"
-                  v={money(Number(pagar.total) - Number(pagar.tax_amount) - Number(pagar.neto_mercaderia))}
-                  nota="Peajes, combustible o servicios que vienen en el mismo documento" />
-              )}
-              {Number(pagar.exempt_amount) !== 0 && <Linea k="Exento" v={money(pagar.exempt_amount)} />}
-              <Linea k="IVA" v={Number(pagar.tax_amount) === 0 ? 'sin IVA' : money(pagar.tax_amount)} />
-              <Linea k="Total del documento" v={money(pagar.total)} fuerte />
-              {Number(pagar.amount_paid) > 0 && (
-                <Linea k="Ya pagado" v={`− ${money(pagar.amount_paid)}`} />
-              )}
-              <Linea k="Saldo por pagar" v={money(saldo)} fuerte />
-            </dl>
+            <DesgloseTributario
+              netoMercaderia={Number(pagar.neto_mercaderia)}
+              netoAfecto={pagar.net_amount === null ? null : Number(pagar.net_amount)}
+              exento={Number(pagar.exempt_amount)}
+              iva={Number(pagar.tax_amount)}
+              bruto={Number(pagar.total)}
+              pagado={Number(pagar.amount_paid)}
+              saldo={saldo}
+            />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -1026,19 +1029,6 @@ function PagoModal({
   )
 }
 
-function Linea({ k, v, nota, fuerte }: { k: string; v: string; nota?: string; fuerte?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-1.5">
-      <dt className={clsx('text-slate-500', fuerte && 'font-medium text-slate-700')}>
-        {k}
-        {nota && <span className="block text-xs text-slate-400">{nota}</span>}
-      </dt>
-      <dd className={clsx('shrink-0 tabular-nums', fuerte ? 'font-semibold text-navy-900' : 'text-slate-600')}>
-        {v}
-      </dd>
-    </div>
-  )
-}
 
 function mensajeCobranza(c: Cobrar) {
   const texto =

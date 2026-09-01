@@ -7,6 +7,7 @@ import type { PaymentMethod, Purchase } from '../../lib/types'
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE, PURCHASE_STATUS_LABEL } from '../../lib/constants'
 import { dateShort, kg, money } from '../../lib/format'
 import { Card, EmptyState, ErrorState, Modal, NombreEntidad, PageHeader, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { DesgloseTributario } from '../../components/DesgloseTributario'
 import { FiltroPeriodo, Paginador } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
 import { descargarCsv } from '../../lib/csv'
@@ -28,6 +29,35 @@ interface ItemCompra {
 }
 
 const lineaVacia: Linea = { product_id: '', quantity: '', unit_price: '' }
+
+/**
+ * Lo que se le paga al proveedor: la factura completa con IVA.
+ *
+ * `total` y `subtotal` son netos — sirven para costear el pescado, no para
+ * cuadrar la transferencia. Cuando el documento no trae desglose del SII (una
+ * compra cargada a mano, sin DTE) el bruto es lo único que hay: el propio neto.
+ */
+const bruto = (c: Purchase) => Number(c.gross_total ?? c.total)
+
+/** Tipos de documento tributario que llegan del SII vía Bsale. */
+const DTE_LABEL: Record<number, string> = {
+  33: 'Factura afecta',
+  34: 'Factura exenta',
+  61: 'Nota de crédito',
+}
+
+/**
+ * Cuándo hay que pagarla de verdad: emisión + plazo pactado.
+ *
+ * No se usa `due_date` porque en la mayoría de las facturas Bsale la trae igual
+ * a la fecha de emisión ("contado"), aunque el acuerdo con el proveedor sea a
+ * 30 o 35 días. `terms_days` es el plazo real y lo rellena la base.
+ */
+function vencimiento(c: Purchase): string {
+  const d = new Date(`${c.purchase_date}T12:00:00`)
+  d.setDate(d.getDate() + (c.terms_days ?? 0))
+  return d.toISOString().slice(0, 10)
+}
 
 export function Compras() {
   const qc = useQueryClient()
@@ -86,14 +116,18 @@ export function Compras() {
 
   function exportar() {
     const filas: (string | number)[][] = [[
-      'Compra', 'Proveedor', 'Razón social', 'RUT', 'Fecha', 'Factura', 'Origen', 'Neto', 'Flete', 'Otros',
-      'Total', 'Estado', 'Pago', 'Pagado', 'Saldo',
+      'Compra', 'Proveedor', 'Razón social', 'RUT', 'Fecha', 'Factura', 'Origen',
+      'Neto mercadería', 'Flete', 'Otros', 'Neto afecto', 'Exento', 'IVA', 'Total con IVA',
+      'Plazo (días)', 'Vence', 'Estado', 'Pago', 'Pagado', 'Fecha de pago', 'Saldo',
     ]]
     for (const c of filtradas) {
       filas.push([c.code, c.suppliers?.name ?? '', c.suppliers?.company ?? '',
         c.suppliers?.rut ?? '', c.purchase_date, c.invoice_number ?? '',
-        c.origin ?? '', c.subtotal, c.freight_cost, c.other_costs, c.total,
-        c.status, c.payment_status, c.amount_paid, Number(c.total) - Number(c.amount_paid)])
+        c.origin ?? '', c.subtotal, c.freight_cost, c.other_costs,
+        c.net_amount ?? '', c.exempt_amount ?? 0, c.tax_amount ?? 0, bruto(c),
+        c.terms_days ?? '', c.terms_days === null ? '' : vencimiento(c),
+        c.status, c.payment_status, c.amount_paid, c.last_payment_at ?? '',
+        bruto(c) - Number(c.amount_paid)])
     }
     descargarCsv(filas, `compras-${periodo.desde ?? 'todo'}`)
   }
@@ -108,6 +142,26 @@ export function Compras() {
         .eq('purchase_id', detalleId)
       if (error) throw error
       return data as unknown as ItemCompra[]
+    },
+  })
+
+  const compraDetalle = useMemo(
+    () => (compras.data ?? []).find((c) => c.id === detalleId) ?? null,
+    [compras.data, detalleId],
+  )
+
+  /** El historial de pagos de la compra: cuándo se pagó y con qué referencia. */
+  const pagosCompra = useQuery({
+    queryKey: ['pagos-de-compra', detalleId],
+    enabled: !!detalleId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payments')
+        .select('id, code, amount, method, paid_at, reference, notes, is_estimated')
+        .eq('purchase_id', detalleId!).eq('direction', 'pago')
+        .order('paid_at', { ascending: false })
+      if (error) throw error
+      return data as PagoCompra[]
     },
   })
 
@@ -130,6 +184,21 @@ export function Compras() {
   const recibidas = filtradas.filter((c) => c.status === 'recibida')
   const borradores = filtradas.filter((c) => c.status === 'borrador')
 
+  const totales = useMemo(() => ({
+    neto: recibidas.reduce((n, c) => n + Number(c.total), 0),
+    iva: recibidas.reduce((n, c) => n + Number(c.tax_amount ?? 0), 0),
+    bruto: recibidas.reduce((n, c) => n + bruto(c), 0),
+  }), [recibidas])
+
+  const porPagar = useMemo(() => {
+    const abiertas = filtradas.filter((c) =>
+      c.status === 'recibida' && c.payment_status !== 'pagado' && !c.is_credit_note)
+    return {
+      docs: abiertas.length,
+      monto: abiertas.reduce((n, c) => n + (bruto(c) - Number(c.amount_paid)), 0),
+    }
+  }, [filtradas])
+
   return (
     <>
       <PageHeader
@@ -149,12 +218,17 @@ export function Compras() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Comprado en el período" value={money(recibidas.reduce((n, c) => n + Number(c.total), 0))} hint={`${recibidas.length} compras`} />
+        <StatCard label="Comprado en el período" value={money(totales.neto)}
+          hint={`${recibidas.length} compras · neto, + ${money(totales.iva)} de IVA = ${money(totales.bruto)}`} />
         <StatCard label="Flete del período" value={money(recibidas.reduce((n, c) => n + Number(c.freight_cost), 0))} icon={<Truck className="h-4 w-4" />} />
+        {/* Lo que se le transfiere al proveedor es la factura completa: el bruto
+            con IVA, no el neto de la mercadería. Mostrar `total` acá dejaba la
+            deuda corta por casi un 19%. */}
         <StatCard
           label="Por pagar"
-          value={money(filtradas.filter((c) => c.payment_status !== 'pagado' && c.status === 'recibida').reduce((n, c) => n + (Number(c.total) - Number(c.amount_paid)), 0))}
+          value={money(porPagar.monto)}
           tone="warning"
+          hint={`${porPagar.docs} facturas con IVA incluido`}
         />
         <StatCard label="Borradores" value={String(borradores.length)} hint="pendientes de recibir" />
       </div>
@@ -201,8 +275,9 @@ export function Compras() {
                 <th className="th">Proveedor</th>
                 <th className="th">RUT</th>
                 <th className="th">Fecha</th>
-                <th className="th">Neto + costos</th>
-                <th className="th">Total</th>
+                <th className="th text-right">Neto</th>
+                <th className="th text-right">IVA</th>
+                <th className="th text-right">Total con IVA</th>
                 <th className="th">Estado</th>
                 <th className="th">Pago</th>
                 <th className="th"></th>
@@ -222,20 +297,60 @@ export function Compras() {
                       razonSocial={c.suppliers?.company} />
                   </td>
                   <td className="td tabular-nums text-slate-500">{c.suppliers?.rut ?? '—'}</td>
-                  <td className="td text-slate-500">{dateShort(c.purchase_date)}</td>
-                  <td className="td text-xs text-slate-500">
-                    {money(c.subtotal)} + {money(Number(c.freight_cost) + Number(c.other_costs))}
+                  <td className="td text-slate-500">
+                    {dateShort(c.purchase_date)}
+                    {c.status === 'recibida' && c.terms_days !== null && (
+                      <span className="block text-xs text-slate-400">
+                        vence {dateShort(vencimiento(c))} · {c.terms_days} d
+                      </span>
+                    )}
                   </td>
-                  <td className="td tabular-nums font-medium">{money(c.total)}</td>
+                  <td className="td text-right tabular-nums text-slate-600">
+                    {money(c.total)}
+                    {(Number(c.freight_cost) + Number(c.other_costs)) > 0 && (
+                      <span className="block text-xs text-slate-400">
+                        incl. {money(Number(c.freight_cost) + Number(c.other_costs))} de costos
+                      </span>
+                    )}
+                    {Number(c.exempt_amount ?? 0) !== 0 && (
+                      <span className="block text-xs text-slate-400">
+                        exento {money(c.exempt_amount)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="td text-right tabular-nums text-slate-500">
+                    {c.net_amount === null
+                      ? <span className="text-slate-300" title="El documento no trae desglose del SII">sin desglose</span>
+                      : Number(c.tax_amount) === 0 ? <span className="text-slate-400">exenta</span>
+                      : money(c.tax_amount)}
+                  </td>
+                  <td className="td text-right tabular-nums font-medium">{money(bruto(c))}</td>
                   <td className="td">
                     <span className={`badge ${c.status === 'recibida' ? 'bg-emerald-100 text-emerald-700' : c.status === 'anulada' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
                       {PURCHASE_STATUS_LABEL[c.status]}
                     </span>
                   </td>
-                  <td className="td">
+                  {/* El estado por sí solo no dice nada accionable: hace falta
+                      cuándo se pagó, o cuánto falta si todavía no. */}
+                  <td className="td whitespace-nowrap">
                     <span className={`badge ${PAYMENT_STATUS_STYLE[c.payment_status]}`}>
                       {PAYMENT_STATUS_LABEL[c.payment_status]}
                     </span>
+                    {c.last_payment_at ? (
+                      <span className="mt-0.5 block text-xs text-slate-400">
+                        {new Date(`${c.last_payment_at}T12:00:00`) > new Date() ? 'programado' : 'pagado'}
+                        {' '}{dateShort(c.last_payment_at)}
+                      </span>
+                    ) : c.status === 'recibida' && !c.is_credit_note ? (
+                      <span className="mt-0.5 block text-xs text-slate-400">
+                        debe {money(bruto(c) - Number(c.amount_paid))}
+                      </span>
+                    ) : null}
+                    {c.payment_status === 'parcial' && (
+                      <span className="block text-xs text-amber-600">
+                        abonado {money(c.amount_paid)}
+                      </span>
+                    )}
                   </td>
                   <td className="td text-right whitespace-nowrap">
                     {c.status === 'borrador' && (
@@ -298,6 +413,7 @@ export function Compras() {
       <AnularCompra compra={anular} onClose={() => setAnular(null)} onListo={refrescar} />
 
       <Modal open={!!detalleId} onClose={() => setDetalleId(null)} title="Detalle de la compra" wide>
+        {compraDetalle && <ResumenTributario compra={compraDetalle} pagos={pagosCompra.data ?? []} />}
         {detalle.isLoading && <Skeleton className="h-32" />}
         <div className="space-y-1.5">
           {detalle.data?.map((it) => (
@@ -757,3 +873,95 @@ function ResumenCosto({
     </div>
   )
 }
+
+
+interface PagoCompra {
+  id: string
+  code: string
+  amount: number
+  method: PaymentMethod
+  paid_at: string
+  reference: string | null
+  notes: string | null
+  is_estimated: boolean
+}
+
+/**
+ * El desglose tributario de la factura y su estado de pago, arriba del detalle.
+ *
+ * Es lo que hace falta para cuadrar contra el documento del SII y contra la
+ * cartola del banco: neto, exento, IVA y bruto por un lado; y por el otro,
+ * cuándo se pagó, con qué referencia y cuánto queda.
+ */
+function ResumenTributario({ compra, pagos }: { compra: Purchase; pagos: PagoCompra[] }) {
+  const brutoDoc = bruto(compra)
+  const saldo = brutoDoc - Number(compra.amount_paid)
+  return (
+    <div className="mb-4 space-y-3">
+      <div className="rounded-lg border border-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+          <div>
+            <p className="text-sm font-medium text-navy-900">
+              {compra.invoice_number ? `Factura ${compra.invoice_number}` : compra.code}
+              {compra.dte_type && (
+                <span className="ml-2 text-xs font-normal text-slate-400">
+                  {DTE_LABEL[compra.dte_type] ?? `DTE ${compra.dte_type}`}
+                </span>
+              )}
+            </p>
+            <p className="text-xs text-slate-400">
+              emitida {dateShort(compra.purchase_date)}
+              {compra.terms_days !== null &&
+                ` · ${compra.terms_days} días · vence ${dateShort(vencimiento(compra))}`}
+            </p>
+          </div>
+          <span className={`badge ${PAYMENT_STATUS_STYLE[compra.payment_status]}`}>
+            {PAYMENT_STATUS_LABEL[compra.payment_status]}
+          </span>
+        </div>
+
+        <DesgloseTributario
+          netoMercaderia={Number(compra.total)}
+          netoAfecto={compra.net_amount === null ? null : Number(compra.net_amount)}
+          exento={Number(compra.exempt_amount ?? 0)}
+          iva={Number(compra.tax_amount ?? 0)}
+          bruto={brutoDoc}
+          flete={Number(compra.freight_cost) + Number(compra.other_costs)}
+          pagado={Number(compra.amount_paid)}
+          saldo={saldo}
+        />
+      </div>
+
+      {pagos.length > 0 && (
+        <div className="rounded-lg border border-slate-200">
+          <p className="border-b border-slate-100 px-4 py-2 text-xs font-medium text-slate-500">
+            Pagos registrados
+          </p>
+          <div className="divide-y divide-slate-50">
+            {pagos.map((x) => (
+              <div key={x.id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+                <div>
+                  <p className="text-slate-700">
+                    {dateShort(x.paid_at)}
+                    {x.is_estimated && (
+                      <span className="ml-1.5 text-[11px] text-amber-600"
+                        title="Fecha reconstruida en la carga histórica, no comprobada contra el banco">
+                        estimado
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {x.code} · {PAYMENT_METHOD_LABEL[x.method]}
+                    {x.reference && ` · ref ${x.reference}`}
+                  </p>
+                </div>
+                <p className="tabular-nums font-medium">{money(x.amount)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+

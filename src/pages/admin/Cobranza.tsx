@@ -16,6 +16,7 @@ import { descargarCsv } from '../../lib/csv'
 import { FiltroPeriodo, Paginador, ThOrden } from '../../components/Filtros'
 import { ordenar, useOrden } from '../../lib/orden'
 import { nombreMes, rangoDe, type Periodo } from '../../lib/periodo'
+import { comportamientoDeFacturas, promedioPorMes, type MesComportamiento } from '../../lib/comportamiento'
 import { ReporteCobro } from '../../components/ReporteCobro'
 import { DetalleFactura, type FacturaRef } from '../../components/DetalleFactura'
 import { CorregirFactura } from '../../components/CorregirFactura'
@@ -72,6 +73,10 @@ export function Cobranza() {
   const ordFactura = useOrden<ColFactura>('emitida')
   const ordComport = useOrden<ColComport>('dias_promedio')
   const [filtroComport, setFiltroComport] = useState<FiltroComport>('todos')
+  // «Cómo pagan» promedia toda la historia del cliente. Al elegir un mes, los
+  // promedios se recalculan sobre las facturas pagadas ESE mes: es la diferencia
+  // entre «cómo paga» y «cómo pagó en marzo», y las dos se preguntan igual de seguido.
+  const [mesComport, setMesComport] = useState('')
 
   const clientes = useQuery({
     queryKey: ['cob-clientes'],
@@ -224,8 +229,28 @@ export function Cobranza() {
     }
   }, [facturasFiltradas])
 
+  /** Facturas pagadas dentro del período elegido arriba, para el resumen mensual. */
+  const facturasDelPeriodo = useMemo(() => (facturas.data ?? []).filter((f) => {
+    const mes = f.mes_pago
+    if (!mes) return false
+    if (periodo.desde && mes < periodo.desde.slice(0, 7)) return false
+    if (periodo.hasta && mes > periodo.hasta.slice(0, 7)) return false
+    return true
+  }), [facturas.data, periodo.desde, periodo.hasta])
+
+  const mesesComport = useMemo(() => promedioPorMes(facturasDelPeriodo), [facturasDelPeriodo])
+
+  /** Al no haber mes elegido manda la vista del servidor, que mira toda la historia. */
+  const comportamientoBase = useMemo(() => {
+    if (!mesComport) return comportamiento.data ?? []
+    return comportamientoDeFacturas(
+      facturasDelPeriodo.filter((f) => f.mes_pago === mesComport),
+      comportamiento.data ?? [],
+    )
+  }, [mesComport, facturasDelPeriodo, comportamiento.data])
+
   const comportamientoFiltrado = useMemo(() => {
-    const base = (comportamiento.data ?? [])
+    const base = comportamientoBase
       .filter((c) => c.facturas_totales > 0)
       .filter((c) => !q || c.cliente.toLowerCase().includes(q) || (c.rut ?? '').includes(q))
       .filter((c) => {
@@ -250,7 +275,7 @@ export function Cobranza() {
       ultimo_pago: c.ultimo_pago,
       facturado: Number(c.monto_total),
     })[k])
-  }, [comportamiento.data, q, filtroComport, ordComport.orden])
+  }, [comportamientoBase, q, filtroComport, ordComport.orden])
 
   /**
    * Las tarjetas de arriba muestran lo que hay en pantalla, no la cartera
@@ -654,6 +679,9 @@ export function Cobranza() {
 
       {pestana === 'comportamiento' && (
         <>
+          <PromedioPorMes meses={mesesComport} elegido={mesComport} onElegir={setMesComport}
+            cargando={facturas.isLoading} />
+
           <div className="mb-3 flex flex-wrap items-center gap-1">
             {(Object.keys(FILTRO_COMPORT) as FiltroComport[]).map((f) => (
               <button key={f} onClick={() => setFiltroComport(f)}
@@ -665,6 +693,12 @@ export function Cobranza() {
             <span className="ml-2 text-xs text-slate-400">
               {comportamientoFiltrado.length} cliente(s) · toca un encabezado para ordenar
             </span>
+            {mesComport && (
+              <span className="ml-auto rounded-full bg-sea-50 px-3 py-1 text-xs font-medium text-sea-700">
+                Promedios de {nombreMes(mesComport)}
+                <button onClick={() => setMesComport('')} className="ml-2 hover:underline">quitar</button>
+              </span>
+            )}
           </div>
           <TablaComportamiento filas={comportamientoFiltrado} cargando={comportamiento.isLoading}
             onCartola={setCartola} orden={ordComport.orden} onOrden={ordComport.cambiar}
@@ -2857,3 +2891,126 @@ function ModalImputar({
   )
 }
 
+
+/**
+ * Promedio de pago mes a mes, y filtro por mes.
+ *
+ * Arriba de «Cómo pagan» hacía falta la lectura de tendencia: la tabla dice cómo
+ * paga cada cliente en toda su historia, pero no si el mes pasado se pagó más
+ * lento que el anterior. Al tocar un mes, los promedios de la tabla de abajo se
+ * recalculan con las facturas pagadas ese mes.
+ *
+ * El promedio de la fila va ponderado por monto. El simple aparece al lado
+ * porque cuando se separan mucho el dato es en sí mismo la noticia: significa
+ * que las facturas grandes se están pagando distinto que las chicas.
+ */
+function PromedioPorMes({
+  meses, elegido, onElegir, cargando,
+}: {
+  meses: MesComportamiento[]
+  elegido: string
+  onElegir: (m: string) => void
+  cargando: boolean
+}) {
+  if (cargando) return <Card className="mb-3"><Skeleton className="h-40" /></Card>
+  if (meses.length === 0) return null
+
+  const total = meses.reduce((a, m) => a + m.monto, 0)
+  const general = total > 0
+    ? meses.reduce((a, m) => a + (m.diasPromedio ?? 0) * m.monto, 0) / total
+    : null
+  const ultimo = meses.at(-1)
+  const previo = meses.length > 1 ? meses.at(-2) : null
+  const delta = ultimo?.diasPromedio != null && previo?.diasPromedio != null
+    ? ultimo.diasPromedio - previo.diasPromedio : null
+
+  return (
+    <Card className="mb-3">
+      <CardHeader
+        title="Promedio de pago por mes"
+        action={
+          <div className="flex items-center gap-2">
+            {general !== null && (
+              <span className="text-xs text-slate-500">
+                General <span className="font-semibold text-navy-900">{general.toFixed(1)} d</span>
+              </span>
+            )}
+            {/* El mes en curso lleva pocas facturas y su promedio salta solo: se
+                muestra igual, pero sin pintarlo de alarma y diciendo qué se compara. */}
+            {delta !== null && ultimo && previo && (
+              <span className={clsx('rounded-full px-2 py-0.5 text-xs font-medium',
+                ultimo.facturas < 10 ? 'bg-slate-100 text-slate-500'
+                : delta > 0.5 ? 'bg-red-100 text-red-700'
+                : delta < -0.5 ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-slate-100 text-slate-600')}>
+                {delta > 0 ? '+' : ''}{delta.toFixed(1)} d · {nombreMes(ultimo.mes).split(' ')[0]}
+                {' vs. '}{nombreMes(previo.mes).split(' ')[0]}
+                {ultimo.facturas < 10 && ` · solo ${ultimo.facturas} factura(s)`}
+              </span>
+            )}
+          </div>
+        }
+      />
+
+      <TableWrap>
+        <thead className="bg-slate-50">
+          <tr>
+            <th className="th">Mes de pago</th>
+            <th className="th text-right">Facturas</th>
+            <th className="th text-right">Clientes</th>
+            <th className="th text-right">Cobrado</th>
+            <th className="th text-right">Días promedio</th>
+            <th className="th text-right">Simple</th>
+            <th className="th text-right">Mediana</th>
+            <th className="th text-right">Rango</th>
+            <th className="th text-right">vs. plazo</th>
+            <th className="th text-right">A tiempo</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {meses.map((m) => (
+            <tr key={m.mes}
+              onClick={() => onElegir(elegido === m.mes ? '' : m.mes)}
+              className={clsx('cursor-pointer',
+                elegido === m.mes ? 'bg-sea-50/70' : 'hover:bg-slate-50')}
+              title="Recalcula la tabla de abajo con las facturas pagadas este mes">
+              <td className="td font-medium text-slate-700 capitalize">{nombreMes(m.mes)}</td>
+              <td className="td text-right tabular-nums text-slate-500">{m.facturas}</td>
+              <td className="td text-right tabular-nums text-slate-500">{m.clientes}</td>
+              <td className="td text-right tabular-nums">{money(m.monto)}</td>
+              <td className="td text-right">
+                <span className="text-base font-semibold tabular-nums text-navy-900">
+                  {m.diasPromedio === null ? '—' : `${m.diasPromedio.toFixed(1)} d`}
+                </span>
+              </td>
+              <td className="td text-right tabular-nums text-slate-400">
+                {m.diasSimple === null ? '—' : `${m.diasSimple.toFixed(1)} d`}
+              </td>
+              <td className="td text-right tabular-nums text-slate-500">
+                {m.mediana === null ? '—' : `${Math.round(m.mediana)} d`}
+              </td>
+              <td className="td text-right text-xs tabular-nums text-slate-400">
+                {m.minimo === null ? '—' : `${m.minimo}–${m.maximo}`}
+              </td>
+              <td className={clsx('td text-right tabular-nums',
+                m.excesoPromedio === null ? 'text-slate-300'
+                : m.excesoPromedio > 0 ? 'font-medium text-red-600' : 'text-emerald-600')}>
+                {m.excesoPromedio === null ? '—'
+                  : `${m.excesoPromedio > 0 ? '+' : ''}${m.excesoPromedio.toFixed(1)} d`}
+              </td>
+              <td className="td text-right tabular-nums text-slate-500">
+                {m.pctATiempo === null ? '—' : `${m.pctATiempo}%`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </TableWrap>
+
+      <p className="mt-2 text-xs text-slate-400">
+        El mes es el de la fecha de pago, no el de emisión. «Días promedio» va ponderado por monto:
+        una factura grande pagada tarde pesa más que varias chicas pagadas al día.
+        Toca un mes para recalcular con él la tabla de clientes.
+      </p>
+    </Card>
+  )
+}

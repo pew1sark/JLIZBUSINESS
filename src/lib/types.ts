@@ -200,6 +200,21 @@ export interface Purchase {
   document_url: string | null
   origin: string | null
   bsale_document_id: number | null
+  /**
+   * Desglose tributario del SII que llega desde Bsale. Para costear se usa
+   * `total`/`subtotal`, que son netos; para pagarle al proveedor, `gross_total`,
+   * que es la factura completa con IVA.
+   */
+  net_amount: number | null
+  exempt_amount: number
+  tax_amount: number
+  gross_total: number | null
+  dte_type: number | null
+  is_credit_note: boolean
+  /** Plazo de crédito pactado, en días. Base del vencimiento real. */
+  terms_days: number | null
+  /** Fecha del último pago registrado. La mantiene el trigger, no se escribe a mano. */
+  last_payment_at: string | null
   suppliers?: Pick<Supplier, 'id' | 'name' | 'company' | 'rut'>
 }
 
