@@ -92,12 +92,16 @@ export interface ResumenPagos {
   vencidas: { docs: number; monto: number }
   notasCredito: { docs: number; monto: number }
   pagadas: { docs: number; monto: number }
-  /** Pagos ya cargados con fecha futura: comprometidos, todavía no salidos. */
+  /**
+   * De lo anterior, lo pagado con cheque a fecha que todavía no se cobra.
+   * Cuenta en los promedios; se informa aparte para saber cuánto falta que pase
+   * efectivamente por el banco.
+   */
   programadas: { docs: number; monto: number }
   /** Σ(monto × días de crédito) / Σ(monto). */
   plazoPonderado: number | null
   plazoSimple: number | null
-  /** Días que se demoró en pagar, contados desde la emisión. */
+  /** Días que se demoró en pagar, desde la emisión. Incluye los cheques a fecha. */
   pagoReal: number | null
   pagoRealSimple: number | null
   /** Pago real − vencimiento. Negativo significa que se pagó antes. */
@@ -122,12 +126,22 @@ export function resumenPagos(filas: PagoProveedor[]): ResumenPagos {
   const notas = filas.filter((f) => f.tramo === 'nota_credito')
   const porVencer = filas.filter((f) => f.tramo === 'por_vencer')
   const vencidas = filas.filter((f) => f.tramo === 'vencida')
-  // Una factura con fecha de pago futura no entra al promedio de pago real: si
-  // entrara, el mes en curso siempre se vería mejor de lo que todavía es.
   const pagadas = filas.filter((f) => f.tramo === 'pagada')
   const programadas = filas.filter((f) => f.tramo === 'programada')
+
+  /**
+   * Lo que ya tiene fecha de pago decidida, haya salido la plata o no.
+   *
+   * El cliente carga los cheques con la fecha en que se cobran, que es futura.
+   * Esa fecha no es una intención: es el papel que ya entregó y el día que
+   * negoció con el proveedor. Para medir a cuántos días paga, cuenta igual que
+   * una transferencia hecha — dejarla fuera hacía que el mes en curso apareciera
+   * sin datos. Lo que sí se mantiene aparte es el conteo, para poder decir
+   * cuánto del promedio todavía no pasó por el banco.
+   */
+  const liquidadas = [...pagadas, ...programadas]
   // El atraso solo se puede medir en lo que ya se pagó.
-  const medibles = pagadas.filter((f) => f.dias_atraso !== null)
+  const medibles = liquidadas.filter((f) => f.dias_atraso !== null)
   const aTiempo = medibles.filter((f) => Number(f.dias_atraso) <= 0).length
 
   return {
@@ -142,15 +156,15 @@ export function resumenPagos(filas: PagoProveedor[]): ResumenPagos {
     programadas: { docs: programadas.length, monto: suma(programadas, (f) => f.bruto) },
     plazoPonderado: ponderado(filas.filter((f) => f.tramo !== 'nota_credito'), (f) => f.plazo_pactado),
     plazoSimple: simple(filas.filter((f) => f.tramo !== 'nota_credito'), (f) => f.plazo_pactado),
-    pagoReal: ponderado(pagadas, (f) => f.dias_en_pagar),
-    pagoRealSimple: simple(pagadas, (f) => f.dias_en_pagar),
+    pagoReal: ponderado(liquidadas, (f) => f.dias_en_pagar),
+    pagoRealSimple: simple(liquidadas, (f) => f.dias_en_pagar),
     atraso: ponderado(medibles, (f) => f.dias_atraso),
     atrasoSimple: simple(medibles, (f) => f.dias_atraso),
     aTiempo,
     fueraDePlazo: medibles.length - aTiempo,
     pctATiempo: medibles.length ? Math.round((100 * aTiempo) / medibles.length) : null,
-    estimadas: pagadas.filter((f) => f.pago_estimado).length,
-    montoEstimado: suma(pagadas.filter((f) => f.pago_estimado), (f) => f.bruto),
+    estimadas: liquidadas.filter((f) => f.pago_estimado).length,
+    montoEstimado: suma(liquidadas.filter((f) => f.pago_estimado), (f) => f.bruto),
     neto: suma(filas, (f) => (f.neto_afecto ?? f.neto_mercaderia)),
     iva: suma(filas, (f) => f.iva),
   }

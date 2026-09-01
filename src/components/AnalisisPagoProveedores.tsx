@@ -26,7 +26,7 @@ const TRAMO_LABEL: Record<FiltroTramo, string> = {
   todos: 'Todos los documentos',
   por_vencer: 'Solo por vencer',
   vencida: 'Solo vencidas',
-  programada: 'Solo pago programado',
+  programada: 'Solo cheques a fecha',
   pagada: 'Solo pagadas',
 }
 
@@ -178,7 +178,10 @@ function PanelAnalisisPagos({ filas: todas }: { filas: PagoProveedor[] }) {
               hint={`Promedio simple ${dias(r.plazoSimple)} · ponderado por monto`} />
             <StatCard label="Pago real promedio" value={dias(r.pagoReal)}
               icon={<Timer className="h-4 w-4" />}
-              hint={r.pagadas.docs ? `${r.pagadas.docs} facturas ya pagadas` : 'Sin pagos en el período'} />
+              hint={r.pagadas.docs + r.programadas.docs === 0 ? 'Sin pagos en el período'
+                : r.programadas.docs > 0
+                  ? `${r.pagadas.docs + r.programadas.docs} facturas pagadas · ${r.programadas.docs} con cheque a fecha`
+                  : `${r.pagadas.docs} facturas ya pagadas`} />
             <StatCard label="Días promedio de atraso"
               value={dias(r.atraso, true)}
               tone={r.atraso === null ? 'default' : r.atraso > 0 ? 'danger' : 'positive'}
@@ -196,8 +199,8 @@ function PanelAnalisisPagos({ filas: todas }: { filas: PagoProveedor[] }) {
             <StatCard label="Comprado en el período" value={money(r.facturado)}
               hint={`${r.documentos} documentos · IVA ${money(r.iva)}`} />
             {r.programadas.docs > 0 ? (
-              <StatCard label="Pago programado" value={money(r.programadas.monto)}
-                hint={`${r.programadas.docs} facturas con fecha de pago futura`} />
+              <StatCard label="Pagado con cheque a fecha" value={money(r.programadas.monto)}
+                hint={`${r.programadas.docs} facturas · aún no pasa por el banco`} />
             ) : (
               <StatCard label="Notas de crédito" value={money(Math.abs(r.notasCredito.monto))}
                 tone={r.notasCredito.docs ? 'positive' : 'default'}
@@ -208,9 +211,10 @@ function PanelAnalisisPagos({ filas: todas }: { filas: PagoProveedor[] }) {
           {r.programadas.docs > 0 && (
             <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
               <CalendarClock className="mr-1 inline h-3.5 w-3.5" />
-              {r.programadas.docs} facturas por {money(r.programadas.monto)} tienen un pago registrado con
-              fecha futura: la plata todavía no sale. Quedan fuera del pago real promedio y del atraso para
-              no mejorar el mes en curso con algo que aún no ocurre.
+              {r.programadas.docs} de esas facturas ({money(r.programadas.monto)}) están pagadas con cheque
+              a fecha: el documento ya se entregó y el día está acordado, pero todavía no pasa por el banco.
+              Cuentan en el pago real y en el atraso — la decisión de pago ya está tomada — y se muestran
+              aparte para saber cuánta plata falta que salga de la cuenta.
             </p>
           )}
 
@@ -279,7 +283,7 @@ function PanelAnalisisPagos({ filas: todas }: { filas: PagoProveedor[] }) {
                       )}
                       {m.programadas > 0 && (
                         <span className="ml-1.5 text-[11px] font-normal text-sky-600">
-                          {m.programadas} programados
+                          {m.programadas} con cheque a fecha
                         </span>
                       )}
                     </td>
