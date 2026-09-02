@@ -95,6 +95,25 @@ export function Proveedores() {
 
   const guardar = useMutation({
     mutationFn: async (f: Form) => {
+      // Un RUT es una sola ficha. Cargar el mismo proveedor dos veces —la
+      // razon social por un lado y el nombre de pila por otro— partia su
+      // historial en dos y botaba la sincronizacion con Bsale. La base ahora
+      // lo rechaza; esto es para avisarlo con palabras y no con un error crudo.
+      const rut = f.rut.trim()
+      if (rut) {
+        const norma = (v: string) => v.toUpperCase().replace(/[^0-9K]/g, '')
+        const { data: fichas, error: eRut } = await supabase
+          .from('suppliers').select('id, name, rut').not('rut', 'is', null)
+        if (eRut) throw eRut
+        const choque = (fichas as { id: string; name: string; rut: string | null }[] ?? [])
+          .find((s) => s.id !== f.id && norma(s.rut ?? '') === norma(rut))
+        if (choque) {
+          throw new Error(
+            `Ese RUT ya es de "${choque.name}". Edita esa ficha en vez de crear otra: `
+            + 'si tuviera dos, las compras de Bsale se repartirian entre ambas.')
+        }
+      }
+
       const fila = {
         name: f.name.trim(),
         company: f.company.trim() || null,
