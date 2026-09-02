@@ -10,6 +10,7 @@ import { dateTime, money } from '../../lib/format'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui'
 import { CorteAnalisis } from '../../components/CorteAnalisis'
 import { CorreoSaliente } from '../../components/CorreoSaliente'
+import { MonitorSync } from '../../components/MonitorSync'
 import { BsaleConexion } from './BsaleConexion'
 import { PuestaEnMarcha } from './PuestaEnMarcha'
 
@@ -144,7 +145,10 @@ export function Soporte() {
           <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
             <Plug className="h-4 w-4 text-slate-400" /> Integraciones
           </h2>
-          <BsaleConexion />
+          <div className="space-y-4">
+            <MonitorSync />
+            <BsaleConexion />
+          </div>
         </div>
 
         <div>

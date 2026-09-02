@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, Bell, Boxes, ClipboardCheck, ClipboardList, Fish, LayoutDashboard, LogOut, Menu, Package,
+  AlertTriangle, BarChart3, Bell, Boxes, ClipboardCheck, ClipboardList, Fish, LayoutDashboard, LogOut, Menu, Package,
   FileText, HandCoins, History, Receipt, TrendingDown, Search, Settings, ShieldCheck, ShoppingCart, Truck, Users, Wallet, Wrench, X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../../context/AuthContext'
+import { useMonitorSync, syncEnFalla } from '../../lib/queries'
 import { initials } from '../../lib/format'
 import { ROLE_LABEL } from '../../lib/constants'
 import { GlobalSearch } from '../GlobalSearch'
@@ -42,6 +43,13 @@ export function AdminLayout() {
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+
+  // Que la sincronizacion con Bsale este caida no debe quedar escondido en el
+  // panel de Soporte: se marca en el menu y en la barra, en cualquier pantalla.
+  // Solo lo ve el soporte, que es quien puede hacer algo al respecto.
+  const esSoporte = profile?.role === 'soporte'
+  const { data: sync } = useMonitorSync(esSoporte)
+  const alertaSync = esSoporte && syncEnFalla(sync?.estado)
 
   async function handleSignOut() {
     await signOut()
@@ -93,6 +101,10 @@ export function AdminLayout() {
                       : 'text-navy-200 hover:bg-navy-800 hover:text-white')}>
                 <Icon className="h-[18px] w-[18px] shrink-0" />
                 {label}
+                {alertaSync && (
+                  <span title="La sincronización con Bsale no está corriendo"
+                    className="ml-auto h-2 w-2 animate-pulse rounded-full bg-red-500" />
+                )}
               </NavLink>
             ))}
           </>
@@ -146,9 +158,12 @@ export function AdminLayout() {
         <header className="safe-top sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur">
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden"
+            className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden"
           >
             {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {alertaSync && !menuOpen && (
+              <span className="absolute top-1.5 right-1.5 h-2 w-2 animate-pulse rounded-full bg-red-500" />
+            )}
           </button>
 
           <button
@@ -163,6 +178,13 @@ export function AdminLayout() {
           </button>
 
           <div className="ml-auto flex items-center gap-1">
+            {alertaSync && (
+              <NavLink to="/soporte" title="Ver la consola de sincronización"
+                className="flex items-center gap-1.5 rounded-lg bg-red-50 px-2 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">Sincronización detenida</span>
+              </NavLink>
+            )}
             <NotificationBell />
             <button
               onClick={handleSignOut}

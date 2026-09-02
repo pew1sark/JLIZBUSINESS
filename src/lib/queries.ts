@@ -111,3 +111,63 @@ export const useOperacion = () =>
       return (data?.value ?? {}) as Record<string, number | boolean | string>
     },
   })
+
+// ---------- CONSOLA DE SINCRONIZACIÓN ----------
+
+export type EstadoSync =
+  | 'ok' | 'caida' | 'atrasada' | 'corriendo' | 'trabada' | 'apagada' | 'sin_datos'
+
+export interface CorridaSync {
+  id: string
+  resource: string
+  trigger: string
+  status: 'ok' | 'error' | 'corriendo'
+  started_at: string
+  finished_at: string | null
+  segundos: number | null
+  records_saved: number | null
+  records_read: number | null
+  error: string | null
+}
+
+export interface MonitorSync {
+  ahora: string
+  estado: EstadoSync
+  fallas_seguidas: number
+  ultima_ok: string | null
+  proxima: string
+  job: {
+    activo: boolean
+    schedule: string | null
+    ultimo_disparo: string | null
+    fallos_disparo_24h: number
+  }
+  ultima: CorridaSync | null
+  resumen_24h: { corridas: number; ok: number; error: number; guardados: number }
+  pendientes: { compras_sin_volcar: number; xml_sin_leer: number; xml_con_error: number }
+  corridas: CorridaSync[]
+}
+
+/**
+ * Estado de la sincronización con Bsale.
+ *
+ * Lo piden dos lugares —la consola de Soporte y el menú, que marca en rojo
+ * cuando está caída— así que comparten clave y la llamada se hace una sola vez.
+ * La función de la base lo rechaza a quien no sea soporte; por eso `activo`.
+ */
+export const useMonitorSync = (activo: boolean) =>
+  useQuery({
+    queryKey: ['bsale-monitor'],
+    enabled: activo,
+    // Respaldo por si el canal en vivo no llega a conectarse.
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('bsale_monitor', { _limite: 20 })
+      if (error) throw error
+      return data as MonitorSync
+    },
+  })
+
+/** Los estados que ameritan mirar: es lo que marca en rojo el menú. */
+export const syncEnFalla = (estado: EstadoSync | undefined) =>
+  estado === 'caida' || estado === 'trabada' || estado === 'apagada' || estado === 'atrasada'
