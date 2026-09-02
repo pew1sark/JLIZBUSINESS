@@ -136,10 +136,13 @@ export function MonitorSync() {
         </div>
 
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Este recuadro es historia, no alarma: se deja neutro incluso con
+              errores. Lo que pasa AHORA lo dicen la banda y las fallas
+              seguidas; pintarlo de rojo un día entero después de arreglado
+              hacía dudar de un panel que estaba diciendo que todo iba bien. */}
           <Dato titulo="Últimas 24 h"
             valor={`${data.resumen_24h.ok} ok · ${data.resumen_24h.error} error`}
-            detalle={`${data.resumen_24h.corridas} corridas`}
-            mal={data.resumen_24h.error > 0} />
+            detalle={`${data.resumen_24h.corridas} corridas · ${data.resumen_24h.guardados.toLocaleString('es-CL')} registros`} />
           <Dato titulo="Compras sin volcar" valor={String(p.compras_sin_volcar)}
             detalle="documentos leídos que no llegaron al ERP" mal={p.compras_sin_volcar > 0} />
           <Dato titulo="XML sin leer" valor={String(p.xml_sin_leer)}
