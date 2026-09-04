@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -45,6 +45,25 @@ const REFRESCO = {
   stock: 120_000,
   /** Fichas de clientes: cambian cuando alguien las edita. */
   lento: 300_000,
+} as const
+
+/**
+ * Lo que hace que cambiar el filtro se sienta instantáneo.
+ *
+ * Cada cambio de período reemplaza la clave de cinco consultas a la vez. Sin
+ * esto las cinco arrancaban en `isLoading`, los gráficos se iban a esqueleto y
+ * la pantalla saltaba de alto mientras llegaba el dato: el panel parecía
+ * recargarse entero para mover una fecha. Con `keepPreviousData` lo que está en
+ * pantalla se queda —atenuado, para que se vea que es el período anterior— y
+ * se reemplaza cuando el nuevo llega.
+ *
+ * El `staleTime` es el otro lado: estos agregados ya se refrescan solos, así
+ * que volver a un período recién visto —el gesto de ir y venir entre dos meses
+ * con las flechas— sale del caché y no pide nada.
+ */
+const CONSULTA_DEL_FILTRO = {
+  placeholderData: keepPreviousData,
+  staleTime: 120_000,
 } as const
 
 interface SeriePunto {
@@ -158,6 +177,7 @@ export function Dashboard() {
 
   const serie = useQuery({
     queryKey: ['panel-serie', periodo.desde, periodo.hasta, cliente],
+    ...CONSULTA_DEL_FILTRO,
     refetchInterval: REFRESCO.agregados,
     queryFn: async () => {
       const { data, error } = await supabase.rpc('panel_series', {
@@ -207,6 +227,7 @@ export function Dashboard() {
 
   const clientesRanking = useQuery({
     queryKey: ['panel-clientes', periodo.desde, periodo.hasta],
+    ...CONSULTA_DEL_FILTRO,
     refetchInterval: REFRESCO.agregados,
     queryFn: async () => {
       const { data, error } = await supabase.rpc('panel_clientes', {
@@ -273,6 +294,7 @@ export function Dashboard() {
 
   const topProductos = useQuery({
     queryKey: ['panel-productos', periodo.desde, periodo.hasta, cliente],
+    ...CONSULTA_DEL_FILTRO,
     refetchInterval: REFRESCO.agregados,
     queryFn: async () => {
       const { data, error } = await supabase.rpc('panel_productos', {
@@ -406,7 +428,7 @@ export function Dashboard() {
             </div>
           )}
 
-          <div className="h-72 p-4">
+          <div className={clsx('h-72 p-4 transition-opacity', serie.isPlaceholderData && 'opacity-50')}>
             {serie.isLoading ? (
               <Skeleton className="h-full w-full" />
             ) : (
@@ -520,7 +542,8 @@ export function Dashboard() {
               Ver cobranza
             </Link>}
           />
-          <div className="divide-y divide-slate-50">
+          <div className={clsx('divide-y divide-slate-50 transition-opacity',
+            clientesRanking.isPlaceholderData && 'opacity-50')}>
             {clientesRanking.isLoading && <Skeleton className="m-4 h-40" />}
             {!clientesRanking.isLoading && (clientesRanking.data ?? []).length === 0 && (
               <p className="px-4 py-8 text-center text-sm text-slate-400">
@@ -592,7 +615,7 @@ export function Dashboard() {
               Informe por producto
             </Link>}
           />
-          <div className="h-72 p-4">
+          <div className={clsx('h-72 p-4 transition-opacity', topProductos.isPlaceholderData && 'opacity-50')}>
             {topProductos.isLoading ? (
               <Skeleton className="h-full w-full" />
             ) : (topProductos.data ?? []).length === 0 ? (
@@ -662,7 +685,7 @@ export function Dashboard() {
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-3">
           <CardHeader title="Margen diario estimado" />
-          <div className="h-56 p-4">
+          <div className={clsx('h-56 p-4 transition-opacity', serie.isPlaceholderData && 'opacity-50')}>
             {serie.isLoading ? (
               <Skeleton className="h-full w-full" />
             ) : (

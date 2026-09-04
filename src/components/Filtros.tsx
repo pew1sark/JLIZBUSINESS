@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
 import { mesActual, nombreMes, rangoDe, rangoDeMes, type Periodo, type Preset } from '../lib/periodo'
@@ -15,6 +15,62 @@ const ORDEN: Preset[] = [
   'hoy', 'ayer', 'ultimos7', 'semana', 'semana_pasada',
   'mes', 'mes_pasado', 'mes_elegido', 'ultimos30', 'anio', 'todo',
 ]
+
+/**
+ * Cuánto se espera a que el dedo se detenga antes de avisar el cambio. Corto
+ * para que no se sienta pegado, largo para que escribir un año completo cuente
+ * como un solo cambio.
+ */
+const ESPERA_TIPEO = 350
+
+/**
+ * Un campo de fecha que no dispara una consulta por cada tecla.
+ *
+ * `<input type="date">` avisa del cambio en cada edición intermedia: escribir
+ * el año 2026 pasa por 0002, 0020, 0202 y 2026, y cada uno de esos valores
+ * rehacía las cinco consultas del panel y los filtros en memoria de Cobranza y
+ * Compras. Cuatro rondas de trabajo para tres fechas que no significaban nada.
+ *
+ * Lo que se ve en el campo es local; hacia arriba se avisa cuando el tipeo se
+ * detiene, o al salir del campo, que es cuando la fecha ya está decidida.
+ */
+function CampoFecha({
+  tipo, valor, onCommit, className, etiqueta,
+}: {
+  tipo: 'date' | 'month'
+  valor: string
+  onCommit: (v: string) => void
+  className?: string
+  etiqueta?: string
+}) {
+  const [texto, setTexto] = useState(valor)
+  // El commit vive en una ref para que el temporizador no se reinicie cada vez
+  // que el padre vuelve a crear la función.
+  const commit = useRef(onCommit)
+  commit.current = onCommit
+
+  // Si el valor cambia desde afuera —«Limpiar», las flechas de mes, otro
+  // preset— el campo tiene que seguirlo en vez de quedarse con lo tipeado.
+  useEffect(() => { setTexto(valor) }, [valor])
+
+  useEffect(() => {
+    if (texto === valor) return
+    const t = setTimeout(() => commit.current(texto), ESPERA_TIPEO)
+    return () => clearTimeout(t)
+  }, [texto, valor])
+
+  return (
+    <input
+      type={tipo}
+      className={className}
+      value={texto}
+      aria-label={etiqueta}
+      onChange={(e) => setTexto(e.target.value)}
+      // Salir del campo es una decisión tomada: no hay para qué esperar.
+      onBlur={() => { if (texto !== valor) commit.current(texto) }}
+    />
+  )
+}
 
 /**
  * Rango de fechas de un listado. Aparte de los atajos, `mes_elegido` deja
@@ -53,8 +109,8 @@ export function FiltroPeriodo({
             aria-label="Mes anterior">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <input type="month" className="input w-auto" value={mes}
-            onChange={(e) => e.target.value && onChange(rangoDeMes(e.target.value))} />
+          <CampoFecha tipo="month" className="input w-auto" valor={mes} etiqueta="Mes"
+            onCommit={(v) => v && onChange(rangoDeMes(v))} />
           <button type="button" className="btn-secondary px-2 py-1" onClick={() => correrMes(1)}
             aria-label="Mes siguiente">
             <ChevronRight className="h-4 w-4" />
@@ -64,11 +120,11 @@ export function FiltroPeriodo({
 
       {valor.preset === 'personalizado' && (
         <>
-          <input type="date" className="input w-auto" value={valor.desde ?? ''}
-            onChange={(e) => onChange({ ...valor, preset: 'personalizado', desde: e.target.value || null })} />
+          <CampoFecha tipo="date" className="input w-auto" valor={valor.desde ?? ''} etiqueta="Desde"
+            onCommit={(v) => onChange({ ...valor, preset: 'personalizado', desde: v || null })} />
           <span className="text-xs text-slate-400">a</span>
-          <input type="date" className="input w-auto" value={valor.hasta ?? ''}
-            onChange={(e) => onChange({ ...valor, preset: 'personalizado', hasta: e.target.value || null })} />
+          <CampoFecha tipo="date" className="input w-auto" valor={valor.hasta ?? ''} etiqueta="Hasta"
+            onCommit={(v) => onChange({ ...valor, preset: 'personalizado', hasta: v || null })} />
         </>
       )}
 

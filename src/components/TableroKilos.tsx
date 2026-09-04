@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
   Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
@@ -63,6 +63,10 @@ export function TableroKilos({ periodo, cliente }: { periodo: Periodo; cliente: 
   const q = useQuery({
     queryKey: ['panel-kilos', periodo.desde, periodo.hasta, cliente],
     refetchInterval: 120_000,
+    // Al cambiar el filtro se queda el tablero anterior, atenuado, en vez de
+    // vaciarse a un esqueleto; y volver a un período recién visto no pide nada.
+    placeholderData: keepPreviousData,
+    staleTime: 120_000,
     queryFn: async () => {
       const { data, error } = await supabase.rpc('panel_kilos', {
         _desde: periodo.desde,
@@ -113,7 +117,7 @@ export function TableroKilos({ periodo, cliente }: { periodo: Periodo; cliente: 
       )}
 
       {d && !!ranking.length && (
-        <>
+        <div className={clsx('transition-opacity', q.isPlaceholderData && 'opacity-50')}>
           {/* El producto que manda, en grande: es la respuesta a la pregunta. */}
           <div className="grid grid-cols-2 gap-px border-b border-slate-100 bg-slate-100 sm:grid-cols-4">
             <div className="bg-white px-4 py-3 sm:col-span-2">
@@ -188,7 +192,7 @@ export function TableroKilos({ periodo, cliente }: { periodo: Periodo; cliente: 
               : ' No hay período anterior completo con que comparar.'}
             {' '}Las notas de crédito descuentan kilos.
           </p>
-        </>
+        </div>
       )}
     </Card>
   )

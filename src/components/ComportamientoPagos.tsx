@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
   Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
@@ -136,6 +136,10 @@ export function ComportamientoPagos() {
   const q = useQuery({
     queryKey: ['panel-comportamiento', periodo.desde, periodo.hasta, grano],
     refetchInterval: 300_000,
+    // Este tablero trae seis bloques de una vez y es el más caro del panel:
+    // vaciarlo entero para cambiar la granularidad se sentía como recargar.
+    placeholderData: keepPreviousData,
+    staleTime: 300_000,
     queryFn: async () => {
       const { data, error } = await supabase.rpc('panel_comportamiento_pago', {
         _desde: periodo.desde, _hasta: periodo.hasta, _grano: grano, _limite: 6,
@@ -200,7 +204,7 @@ export function ComportamientoPagos() {
       {q.isLoading && <Skeleton className="m-4 h-96" />}
 
       {d && cli && prov && (
-        <>
+        <div className={clsx('transition-opacity', q.isPlaceholderData && 'opacity-50')}>
           {/* Los cuatro números que resumen el ciclo de caja. */}
           <div className="grid grid-cols-2 gap-px border-b border-slate-100 bg-slate-100 lg:grid-cols-4">
             <Dato
@@ -319,7 +323,7 @@ export function ComportamientoPagos() {
               )}
             </span>
           </p>
-        </>
+        </div>
       )}
     </Card>
   )
