@@ -15,6 +15,8 @@ import { CUSTOMER_TYPE_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE } from 
 import type { CustomerType, DashboardKpis, PaymentStatus, ProductStock } from '../../lib/types'
 import { dateShort, kg, money, moneyShort, pct, relative, relativeDia } from '../../lib/format'
 import { Card, CardHeader, ErrorState, PageHeader, Skeleton, StatCard } from '../../components/ui'
+import { ComportamientoPagos } from '../../components/ComportamientoPagos'
+import { TableroKilos } from '../../components/TableroKilos'
 import { FiltroPeriodo } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
 
@@ -26,6 +28,13 @@ import { rangoDe, type Periodo } from '../../lib/periodo'
  *
  * Con la pestaña en segundo plano el reloj se detiene solo (React Query no
  * consulta en background), y al volver el refresco por foco pone todo al día.
+ *
+ * De acá sale que todos los gráficos vayan con `isAnimationActive={false}`:
+ * Recharts anima la barra creciendo y la línea dibujándose, y si el refresco
+ * llega mientras esa animación corre, la deja congelada donde iba —barras de
+ * dos píxeles, líneas convertidas en puntos sueltos— y el gráfico se ve vacío
+ * o roto hasta la siguiente consulta. En un panel que se refresca solo cada
+ * uno o dos minutos, eso pasa seguido.
  */
 const REFRESCO = {
   /** Facturas y cobros: es lo que se mira de reojo durante el día. */
@@ -414,8 +423,8 @@ export function Dashboard() {
                   <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} tickFormatter={(v) => moneyShort(v as number)} width={55} />
                   <Tooltip formatter={(v) => money(v as number)} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Area type="monotone" dataKey="ventas" name="Ventas" stroke="#1eafa7" fill="url(#gVentas)" strokeWidth={2} />
-                  <Line type="monotone" dataKey="compras" name="Compras" stroke="#0b2545" strokeWidth={2} dot={false} />
+                  <Area type="monotone" dataKey="ventas" name="Ventas" stroke="#1eafa7" fill="url(#gVentas)" strokeWidth={2} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="compras" name="Compras" stroke="#0b2545" strokeWidth={2} dot={false} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
@@ -545,6 +554,10 @@ export function Dashboard() {
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        {/* Qué se movió en kilos, que es otra pregunta que el ranking en pesos:
+            el filete sube por precio, no por volumen. */}
+        <TableroKilos periodo={periodo} cliente={cliente} />
+
         <Card>
           <CardHeader title="Cartera por tipo" />
           <div className="divide-y divide-slate-50">
@@ -597,7 +610,7 @@ export function Dashboard() {
                       `${money(v as number)} · ${kg(p.payload.kilos)} · ${p.payload.clientes} cliente(s)`,
                       'Facturado',
                     ]} />
-                  <Bar dataKey="monto" name="Facturado" radius={[0, 4, 4, 0]}>
+                  <Bar dataKey="monto" name="Facturado" radius={[0, 4, 4, 0]} isAnimationActive={false}>
                     {(topProductos.data ?? []).map((_, i) => (
                       <Cell key={i} fill={i === 0 ? '#0b2545' : '#5b88bd'} />
                     ))}
@@ -640,6 +653,12 @@ export function Dashboard() {
         </Card>
       </div>
 
+      {/* Cómo se cobra y cómo se paga: el ciclo de caja, con su propio filtro
+          de período y granularidad porque se lee en meses, no en días. */}
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        <ComportamientoPagos />
+      </div>
+
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-3">
           <CardHeader title="Margen diario estimado" />
@@ -653,7 +672,7 @@ export function Dashboard() {
                   <XAxis dataKey="dia" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} tickFormatter={(v) => moneyShort(v as number)} width={55} />
                   <Tooltip formatter={(v) => money(v as number)} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
-                  <Line type="monotone" dataKey="margen" name="Margen" stroke="#158c88" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="margen" name="Margen" stroke="#158c88" strokeWidth={2} dot={false} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             )}

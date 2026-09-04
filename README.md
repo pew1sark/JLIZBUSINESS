@@ -39,6 +39,32 @@ update public.profiles set role = 'reparto' where email = 'persona@empresa.cl';
 
 Roles disponibles: `admin`, `ventas`, `compras`, `inventario`, `empaque`, `reparto`.
 
+## Panel de control
+
+Además de los ocho indicadores y del gráfico de ventas, el panel trae dos tableros que responden
+preguntas que antes obligaban a abrir otra pantalla:
+
+- **Kilos vendidos por producto.** El ranking por facturación premia al filete caro y esconde qué
+  mercadería se está moviendo: la corvina entera a $9.443/kg y su filete a $16.781/kg ocupan lugares
+  muy distintos según se mida en pesos o en kilos, y para comprar en la caleta la unidad es el kilo.
+  Muestra el líder, el precio promedio por kilo, la participación de cada producto y la variación
+  contra el período anterior de igual largo. Los kilos salen del detalle de línea, que no todas las
+  facturas traen, así que el pie dice sobre qué parte de la venta está contado.
+
+- **Comportamiento de pago de clientes y proveedores.** Los dos lados del ciclo de caja juntos, con
+  su propio filtro de período y granularidad (día, semana o mes). Todos los promedios de días van
+  ponderados por monto: una factura de $4.000.000 a 60 días amarra la caja más que tres de $100.000
+  al contado. El número que ordena el tablero es la **brecha**: días en cobrar menos días en pagar.
+  Si se cobra a 37 y se paga a 13, el negocio financia 24 días de operación con plata propia, y eso
+  por el monto mensual es el capital de trabajo que hay que tener. Debajo van la antigüedad de la
+  cartera por tramos de los dos lados, y quiénes retienen más capital —ordenados por monto × días de
+  espera, no por días sueltos—.
+
+  Del lado de proveedores se separa lo **medido** de lo **reconstruido**: la mayoría de los pagos
+  históricos no se registraron cuando ocurrieron y se cargaron a plazo fijo (32 días). Promediar eso
+  devuelve el supuesto, no el comportamiento, así que la brecha se calcula solo contra los pagos
+  comprobados y el pie dice sobre cuántos.
+
 ## Cobranza y portal de pagos
 
 El problema que resuelve: los clientes no pagan las facturas en orden. Uno transfiere un monto
@@ -80,6 +106,9 @@ Proyecto Supabase: **JLIZBUSINESS** (`owfvuusxfvzjgxfmllpt`, región us-east-1).
 - Funciones de negocio: `receive_purchase`, `confirm_order`, `start_preparation`,
   `finish_preparation`, `dispatch_order`, `complete_delivery`, `register_loss`,
   `adjust_lot_quantity`, `dashboard_kpis`, `sales_series`.
+- Funciones del panel: `panel_series`, `panel_clientes`, `panel_productos`, `panel_kilos`
+  (ranking por kilos, con comparación contra el período anterior) y
+  `panel_comportamiento_pago` (cobro y pago en una sola respuesta).
 - Funciones de cobranza: `register_customer_payment`, `allocate_payment`, `auto_allocate_payment`,
   `customer_statement`, `process_sales_import`, `portal_get`, `portal_report_payment`.
 - Datos reales cargados: 38 clientes, 41 productos y 745 documentos de venta del período
