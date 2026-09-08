@@ -39,6 +39,12 @@ const DOC_LABEL: Record<string, string> = {
   nota_credito: 'Nota de crédito', nota_debito: 'Nota de débito',
 }
 
+/** «Abrir la factura 35850», no «Abrir Factura 35850». */
+function etiquetaDoc(tipo: string) {
+  const label = DOC_LABEL[tipo]
+  return label ? `la ${label.toLowerCase()}` : 'el documento'
+}
+
 export function Ventas() {
   const qc = useQueryClient()
   const operacion = useOperacion()
@@ -202,7 +208,7 @@ export function Ventas() {
   function exportarFacturas() {
     const filas: (string | number)[][] = [[
       'Documento', 'Tipo', 'Cliente', 'Razón social', 'RUT',
-      'Emitida', 'Vence', 'Neto', 'IVA', 'Total', 'Pagado', 'Saldo', 'Estado',
+      'Emitida', 'Vence', 'Neto', 'IVA', 'Total', 'Pagado', 'Saldo', 'Estado', 'Documento emitido',
     ]]
     for (const f of facturasFiltradas) {
       filas.push([
@@ -210,6 +216,7 @@ export function Ventas() {
         f.customers?.company ?? '', f.customers?.rut ?? '',
         f.issued_at, f.due_date ?? '', f.net_amount, f.tax_amount, f.total,
         f.amount_paid, Number(f.total) - Number(f.amount_paid), f.payment_status,
+        f.document_url ?? '',
       ])
     }
     descargarCsv(filas, `facturas-${periodo.desde ?? 'todo'}`)
@@ -287,9 +294,12 @@ export function Ventas() {
 
       {fuente === 'facturas' && (
         <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-          Las facturas se emiten en el sistema de facturación electrónica y se importan acá.
-          Como la planilla de ventas no trae costos, en esta vista no se calcula margen: eso
-          se ve en <span className="font-medium">Finanzas → Rentabilidad</span>.
+          Las facturas se emiten en el sistema de facturación electrónica y se importan acá;
+          el ícono <FileText className="inline h-3.5 w-3.5 align-text-bottom text-sea-600" /> junto
+          al folio abre el documento tal como lo recibió el cliente. Lo que se cargó desde la
+          planilla de ventas no trae documento, así que esas filas no lo muestran. Y como la
+          planilla tampoco trae costos, en esta vista no se calcula margen: eso se ve en{' '}
+          <span className="font-medium">Finanzas → Rentabilidad</span>.
         </p>
       )}
 
@@ -374,7 +384,20 @@ export function Ventas() {
                     <tr key={f.id} className="cursor-pointer hover:bg-slate-50"
                       onClick={() => setVerFactura(f)}>
                       <td className="td">
-                        <p className="font-medium text-navy-900">{f.doc_number}</p>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-navy-900">{f.doc_number}</span>
+                          {/* El documento emitido, a un clic. La fila abre el
+                              detalle, así que el enlace se queda con su clic. */}
+                          {f.document_url && (
+                            <a href={f.document_url} target="_blank" rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              title={`Abrir ${etiquetaDoc(f.doc_type)} ${f.doc_number}`}
+                              aria-label={`Abrir ${etiquetaDoc(f.doc_type)} ${f.doc_number}`}
+                              className="text-sea-600 hover:text-sea-700">
+                              <FileText className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </div>
                         <p className="text-xs text-slate-400">{DOC_LABEL[f.doc_type] ?? f.doc_type}</p>
                       </td>
                       <td className="td">

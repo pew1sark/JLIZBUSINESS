@@ -315,6 +315,8 @@ export interface Invoice {
   payment_status: PaymentStatus
   source: 'manual' | 'importado' | 'pedido'
   related_doc_number: string | null
+  /** El PDF del documento tributario emitido. Nulo en lo cargado desde la planilla. */
+  document_url: string | null
   notes: string | null
 }
 
