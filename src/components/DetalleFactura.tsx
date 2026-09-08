@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Pencil } from 'lucide-react'
+import { FileText, Pencil } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { dateShort, money } from '../lib/format'
 import { PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE } from '../lib/constants'
@@ -55,6 +55,7 @@ export function DetalleFactura({
         dias_en_pagar: number | null; dias_esperando: number | null; dias_atraso: number | null
         nota_credito_aplicada: number; saldada_con_nota: boolean; notas_credito: string | null
         estado_corregido: boolean; estado_forzado_motivo: string | null
+        document_url: string | null
       } | null
     },
   })
@@ -205,12 +206,22 @@ export function DetalleFactura({
             </div>
           )}
 
-          {/* Solo las facturas propias se corrigen: un pedido o un saldo
-              inicial no tienen imputaciones que revisar por acá. */}
-          <button type="button" className="btn-secondary w-full sm:w-auto"
-            onClick={() => setCorrigiendo(true)}>
-            <Pencil className="h-4 w-4" /> Corregir el estado o los cobros
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {/* El documento emitido, para cuando lo que se discute no es el
+                monto sino qué decía la factura que recibió el cliente. */}
+            {d?.document_url && (
+              <a href={d.document_url} target="_blank" rel="noreferrer"
+                className="btn-secondary w-full sm:w-auto">
+                <FileText className="h-4 w-4" /> Ver el documento emitido
+              </a>
+            )}
+            {/* Solo las facturas propias se corrigen: un pedido o un saldo
+                inicial no tienen imputaciones que revisar por acá. */}
+            <button type="button" className="btn-secondary w-full sm:w-auto"
+              onClick={() => setCorrigiendo(true)}>
+              <Pencil className="h-4 w-4" /> Corregir el estado o los cobros
+            </button>
+          </div>
         </div>
       )}
 

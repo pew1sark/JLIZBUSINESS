@@ -97,6 +97,15 @@ Crea los clientes y productos que falten (reconocidos por RUT y SKU), los docume
 líneas. Es idempotente: volver a cargar el mismo período no duplica nada. Las notas de crédito
 entran con total negativo y se descuentan del saldo del cliente.
 
+### Abrir el documento desde la tabla
+
+En *Ventas → Facturas emitidas* el folio lleva al lado el ícono del documento: abre el PDF tal
+como lo recibió el cliente, sin salir a buscarlo por número al sistema de facturación. El enlace
+se guarda en `invoices.document_url` cuando la sincronización trae el documento —la misma columna
+y el mismo ícono que ya tenían las compras en *Finanzas* y *Gastos*—, y también viaja en el CSV.
+Lo que se cargó desde la planilla de ventas no trae documento en ninguna parte, así que esas
+filas no muestran el ícono.
+
 ## Base de datos
 
 Proyecto Supabase: **JLIZBUSINESS** (`owfvuusxfvzjgxfmllpt`, región us-east-1).
