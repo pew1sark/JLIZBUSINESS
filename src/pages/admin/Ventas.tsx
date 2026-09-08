@@ -13,7 +13,7 @@ import { dateShort, money } from '../../lib/format'
 import { descargarCsv } from '../../lib/csv'
 import { FiltroPeriodo, Paginador } from '../../components/Filtros'
 import { rangoDe, type Periodo } from '../../lib/periodo'
-import { Card, EmptyState, ErrorState, Modal, NombreEntidad, PageHeader, Pestanas, Skeleton, StatCard, TableWrap } from '../../components/ui'
+import { Card, EmptyState, EnlaceDocumento, ErrorState, Modal, NombreEntidad, PageHeader, Pestanas, Skeleton, StatCard, TableWrap } from '../../components/ui'
 import { SelectorEtiqueta } from '../../components/EtiquetaFactura'
 import { ETIQUETAS, type Etiqueta } from '../../lib/etiquetas'
 import { DetalleFactura } from '../../components/DetalleFactura'
@@ -37,12 +37,6 @@ interface FacturaFila extends Invoice {
 const DOC_LABEL: Record<string, string> = {
   factura: 'Factura', boleta: 'Boleta',
   nota_credito: 'Nota de crédito', nota_debito: 'Nota de débito',
-}
-
-/** «Abrir la factura 35850», no «Abrir Factura 35850». */
-function etiquetaDoc(tipo: string) {
-  const label = DOC_LABEL[tipo]
-  return label ? `la ${label.toLowerCase()}` : 'el documento'
 }
 
 export function Ventas() {
@@ -386,17 +380,8 @@ export function Ventas() {
                       <td className="td">
                         <div className="flex items-center gap-1.5">
                           <span className="font-medium text-navy-900">{f.doc_number}</span>
-                          {/* El documento emitido, a un clic. La fila abre el
-                              detalle, así que el enlace se queda con su clic. */}
-                          {f.document_url && (
-                            <a href={f.document_url} target="_blank" rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              title={`Abrir ${etiquetaDoc(f.doc_type)} ${f.doc_number}`}
-                              aria-label={`Abrir ${etiquetaDoc(f.doc_type)} ${f.doc_number}`}
-                              className="text-sea-600 hover:text-sea-700">
-                              <FileText className="h-3.5 w-3.5" />
-                            </a>
-                          )}
+                          <EnlaceDocumento url={f.document_url} tipo={f.doc_type}
+                            numero={f.doc_number} />
                         </div>
                         <p className="text-xs text-slate-400">{DOC_LABEL[f.doc_type] ?? f.doc_type}</p>
                       </td>

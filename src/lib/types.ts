@@ -348,6 +348,9 @@ export interface CuentaPorCobrar {
   etiqueta_nota: string | null
   rut: string | null
   razon_social: string | null
+  /** El PDF del documento emitido. Solo las facturas: un pedido o un saldo
+      arrastrado no tienen documento en el sistema. */
+  document_url: string | null
 }
 
 export interface EstadoCuentaCliente {
@@ -478,6 +481,8 @@ export interface FacturaConPago {
   /** Marca de color para revisión manual. No afecta ningún cálculo. */
   etiqueta: string | null
   etiqueta_nota: string | null
+  /** El PDF del documento emitido. Nulo en lo cargado desde la planilla. */
+  document_url: string | null
 }
 
 /** Una línea del informe de fechas de pago: este día entró plata y cubrió este documento. */

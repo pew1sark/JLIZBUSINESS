@@ -22,7 +22,8 @@ import { DetalleFactura, type FacturaRef } from '../../components/DetalleFactura
 import { CorregirFactura } from '../../components/CorregirFactura'
 import { PuntoEtiqueta } from '../../components/EtiquetaFactura'
 import {
-  Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Pestanas, Skeleton, StatCard, TableWrap, NombreEntidad,
+  Card, CardHeader, EmptyState, EnlaceDocumento, ErrorState, Modal, PageHeader, Pestanas, Skeleton,
+  StatCard, TableWrap, NombreEntidad,
 } from '../../components/ui'
 
 const TRAMO: Record<string, { label: string; clase: string }> = {
@@ -473,10 +474,11 @@ export function Cobranza() {
   function exportarDocumentos() {
     const filas: (string | number)[][] = [[
       'Documento', 'Tipo', 'Cliente', 'Razón social', 'RUT', 'Emitida', 'Vence', 'Total', 'Pagado', 'Saldo', 'Días de atraso',
+      'Documento emitido',
     ]]
     for (const d of documentosFiltrados) {
       filas.push([d.doc_number ?? d.code, d.doc_type, d.cliente, d.razon_social ?? '', d.rut ?? '', d.issued_at, d.due_date ?? '',
-        d.total, d.amount_paid, d.saldo, d.dias_atraso])
+        d.total, d.amount_paid, d.saldo, d.dias_atraso, d.document_url ?? ''])
     }
     descargarCsv(filas, 'documentos-por-cobrar')
   }
@@ -485,14 +487,14 @@ export function Cobranza() {
     const filas: (string | number)[][] = [[
       'Documento', 'Tipo', 'Cliente', 'Razón social', 'RUT', 'Emitida', 'Vence', 'Neto', 'IVA', 'Total',
       'Pagado', 'Saldo', 'Estado', 'Fecha de pago', 'N° de pagos', 'Forma de pago',
-      'Días en pagar', 'Días vs. plazo', 'Días esperando',
+      'Días en pagar', 'Días vs. plazo', 'Días esperando', 'Documento emitido',
     ]]
     for (const f of facturasFiltradas) {
       filas.push([
         f.doc_number, f.doc_type, f.cliente, f.razon_social ?? '', f.rut ?? '', f.issued_at, f.due_date ?? '',
         f.net_amount, f.tax_amount, f.total, f.amount_paid, f.saldo, f.payment_status,
         f.ultimo_pago ?? '', f.n_pagos, f.metodos ?? '',
-        f.dias_en_pagar ?? '', f.dias_vs_plazo ?? '', f.dias_esperando ?? '',
+        f.dias_en_pagar ?? '', f.dias_vs_plazo ?? '', f.dias_esperando ?? '', f.document_url ?? '',
       ])
     }
     descargarCsv(filas, `facturas-${periodo.desde ?? 'todo'}`)
@@ -1028,7 +1030,11 @@ function TablaDocumentos({
               doc_number: d.doc_number ?? d.code, cliente: d.cliente,
             })}>
             <td className="td">
-              <p className="font-medium text-navy-900">{d.doc_number ?? d.code}</p>
+              <p className="flex items-center gap-1.5 font-medium text-navy-900">
+                {d.doc_number ?? d.code}
+                <EnlaceDocumento url={d.document_url} tipo={d.doc_type}
+                  numero={d.doc_number ?? d.code} />
+              </p>
               <p className="text-xs text-slate-400">
                 {etiquetaDoc(d.doc_type)}
                 {d.invoice_id && <span className="ml-1 text-slate-300">· ver detalle</span>}
@@ -1121,6 +1127,8 @@ function TablaFacturas({
                 <p className="flex items-center gap-1.5 font-medium text-navy-900">
                   <PuntoEtiqueta etiqueta={f.etiqueta} nota={f.etiqueta_nota} />
                   {f.doc_number}
+                  <EnlaceDocumento url={f.document_url} tipo={f.doc_type}
+                    numero={f.doc_number} />
                 </p>
                 <p className="text-xs text-slate-400">{etiquetaDoc(f.doc_type)}</p>
               </td>
