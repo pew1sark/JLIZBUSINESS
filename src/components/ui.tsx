@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { AlertCircle, ChevronRight, Inbox, Loader2, X } from 'lucide-react'
+import { AlertCircle, ChevronRight, FileText, Inbox, Loader2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { Link } from 'react-router-dom'
 
@@ -297,5 +297,46 @@ export function NombreEntidad({
       <p className={clsx('font-medium', alto ? 'text-navy-900' : 'text-slate-800')}>{n}</p>
       {abajo !== '' && <p className="text-xs text-slate-400">{abajo}</p>}
     </>
+  )
+}
+
+
+/** El artículo va en el título del enlace: «Abrir la factura 35850». */
+const NOMBRE_DOC: Record<string, string> = {
+  factura: 'la factura', boleta: 'la boleta',
+  nota_credito: 'la nota de crédito', nota_debito: 'la nota de débito',
+}
+
+/**
+ * El ícono que abre el documento tributario emitido, en otra pestaña.
+ *
+ * Sin enlace no dibuja nada: lo que se cargó desde la planilla de ventas no
+ * tiene documento en ninguna parte, y un pedido interno o un saldo arrastrado
+ * tampoco. Vive acá porque la misma fila aparece en Ventas y en las dos tablas
+ * de Cobranza, y el ícono tiene que significar lo mismo en las tres.
+ *
+ * Frena el clic: en las tres tablas la fila entera abre el detalle.
+ */
+export function EnlaceDocumento({
+  url, tipo, numero,
+}: {
+  url?: string | null
+  tipo: string
+  numero: string | null
+}) {
+  if (!url) return null
+  const nombre = `${NOMBRE_DOC[tipo] ?? 'el documento'} ${numero ?? ''}`.trim()
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      title={`Abrir ${nombre}`}
+      aria-label={`Abrir ${nombre}`}
+      className="shrink-0 text-sea-600 hover:text-sea-700"
+    >
+      <FileText className="h-3.5 w-3.5" />
+    </a>
   )
 }

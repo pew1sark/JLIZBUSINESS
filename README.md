@@ -106,6 +106,12 @@ y el mismo ícono que ya tenían las compras en *Finanzas* y *Gastos*—, y tamb
 Lo que se cargó desde la planilla de ventas no trae documento en ninguna parte, así que esas
 filas no muestran el ícono.
 
+El mismo ícono está en *Cobranza*, en **Facturas** y en **Por cobrar** —que es donde más falta
+hace: al discutir una deuda lo primero que se pide es el documento— y en la cartola del cliente,
+que sale de la misma vista. Un pedido interno todavía no se facturó y un saldo arrastrado viene
+de antes del sistema: esas filas nunca traen documento. El enlace **no** viaja al portal de pagos
+del cliente; que pueda descargar su propia factura desde ahí es una decisión aparte.
+
 ## Base de datos
 
 Proyecto Supabase: **JLIZBUSINESS** (`owfvuusxfvzjgxfmllpt`, región us-east-1).
