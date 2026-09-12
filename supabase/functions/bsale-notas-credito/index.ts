@@ -16,6 +16,32 @@ const PAUSA_MS = 150
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const mensaje = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+// La URL publica del proyecto pierde alrededor de 1 de cada 5 peticiones que
+// salen desde una edge function: vuelven con un 504 instantaneo del gateway,
+// sin llegar a Postgres. Esta funcion hace pocas llamadas, pero las suficientes
+// para caerse seguido, y a diferencia del cron no deja rastro en ninguna tabla
+// de corridas: se cae en silencio. Mismo reintento que en `bsale-cron`.
+const REINTENTABLES = new Set([408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524])
+const MAX_INTENTOS = 5
+
+async function fetchReintentando(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  let ultimo = ''
+  for (let intento = 0; intento < MAX_INTENTOS; intento++) {
+    if (intento > 0) await dormir(250 * 2 ** (intento - 1) + Math.random() * 200)
+    try {
+      const res = await fetch(url, init)
+      if (!REINTENTABLES.has(res.status)) return res
+      await res.body?.cancel()
+      ultimo = `respondio ${res.status}`
+    } catch (e) {
+      ultimo = mensaje(e)
+    }
+  }
+  const donde = typeof url === 'string' ? new URL(url).pathname : String(url)
+  throw new Error(`La API del proyecto fallo en ${MAX_INTENTOS} intentos (${ultimo}) en ${donde}`)
+}
 
 const num = (v: unknown) => {
   if (v === null || v === undefined || v === '') return null
@@ -38,15 +64,21 @@ const campo = (b: string, tag: string) => {
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Metodo no permitido' }, 405)
 
-  const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  const db = createClient(
+    Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    { global: { fetch: fetchReintentando } })
 
-  const { data: esperado } = await db.rpc('automation_secret_get')
+  // Mirar `error` y no solo `data`: una llamada caida no es una configuracion
+  // faltante, y reportarla asi manda a revisar el lugar equivocado.
+  const { data: esperado, error: errSecreto } = await db.rpc('automation_secret_get')
+  if (errSecreto) return json({ error: `No se pudo leer el secreto: ${errSecreto.message}` }, 502)
   const valido = (esperado as string | null) || Deno.env.get('BSALE_CRON_SECRET') || ''
   if (!valido) return json({ error: 'Automatizacion no configurada' }, 503)
   if ((req.headers.get('x-cron-secret') ?? '') !== valido) return json({ error: 'No autorizado' }, 401)
 
-  const { data: cxs } = await db.from('bsale_connections')
+  const { data: cxs, error: errCx } = await db.from('bsale_connections')
     .select('id').eq('status', 'activa').limit(1)
+  if (errCx) return json({ error: `No se pudo leer la conexion: ${errCx.message}` }, 502)
   const cx = cxs?.[0]
   if (!cx) return json({ error: 'Sin conexion activa' }, 400)
 
@@ -60,7 +92,9 @@ Deno.serve(async (req) => {
     .eq('connection_id', cx.id).eq('code_sii', 61)
     .not('url_xml', 'is', null)
   if (!rehacer) q = q.is('xml_synced_at', null)
-  const { data: pend } = await q.order('emission_date', { ascending: false }).limit(MAX_POR_CORRIDA)
+  const { data: pend, error: errPend } =
+    await q.order('emission_date', { ascending: false }).limit(MAX_POR_CORRIDA)
+  if (errPend) return json({ error: `No se pudieron listar las notas: ${errPend.message}` }, 502)
 
   let leidas = 0, conReferencia = 0, fallidas = 0
   const detalle: unknown[] = []
@@ -96,7 +130,7 @@ Deno.serve(async (req) => {
       fallidas++
       await db.from('bsale_sales_documents').update({
         xml_synced_at: new Date().toISOString(),
-        xml_error: e instanceof Error ? e.message : String(e),
+        xml_error: mensaje(e),
       }).eq('connection_id', cx.id).eq('bsale_id', doc.bsale_id)
     }
     await dormir(PAUSA_MS)
