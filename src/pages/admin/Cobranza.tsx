@@ -18,6 +18,7 @@ import { ordenar, useOrden } from '../../lib/orden'
 import { nombreMes, rangoDe, type Periodo } from '../../lib/periodo'
 import { comportamientoDeFacturas, promedioPorMes, type MesComportamiento } from '../../lib/comportamiento'
 import { ReporteCobro } from '../../components/ReporteCobro'
+import { EditarPago, type PagoAEditar } from '../../components/EditarPago'
 import { DetalleFactura, type FacturaRef } from '../../components/DetalleFactura'
 import { CorregirFactura } from '../../components/CorregirFactura'
 import { PuntoEtiqueta } from '../../components/EtiquetaFactura'
@@ -1582,6 +1583,7 @@ function PanelPagos({
 }) {
   const [reiniciar, setReiniciar] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [editar, setEditar] = useState<PagoAEditar | null>(null)
 
   const anular = useMutation({
     mutationFn: async ({ id, motivo }: { id: string; motivo: string }) => {
@@ -1673,6 +1675,11 @@ function PanelPagos({
                     {resto > 0.5 && <span className="text-amber-600"> · {money(resto)} sin imputar</span>}
                   </p>
                 </div>
+                <button type="button" title="Corregir fecha, forma de pago o N° de operación"
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-navy-700"
+                  onClick={() => setEditar({ ...p, contraparte: p.customers?.name })}>
+                  <Pencil className="h-4 w-4" />
+                </button>
                 <button
                   className="btn-secondary px-2.5 py-1.5 text-xs"
                   title="Anular este cobro y devolver las facturas a su saldo anterior"
@@ -1709,6 +1716,8 @@ function PanelPagos({
         <ModalReiniciar onClose={() => setReiniciar(false)}
           onHecho={() => { setReiniciar(false); onHecho() }} />
       )}
+
+      <EditarPago pago={editar} onClose={() => setEditar(null)} onGuardado={onHecho} />
     </div>
   )
 }

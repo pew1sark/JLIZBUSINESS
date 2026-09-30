@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDownLeft, ArrowUpRight, Download, Search } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Download, Pencil, Search } from 'lucide-react'
 import clsx from 'clsx'
 import { supabase } from '../lib/supabase'
 import { PAYMENT_METHOD_LABEL } from '../lib/constants'
@@ -10,6 +10,7 @@ import { descargarCsv } from '../lib/csv'
 import { mesActual, nombreMes, rangoDeMes, type Periodo } from '../lib/periodo'
 import { FiltroPeriodo, Paginador, ThOrden } from './Filtros'
 import { useOrden, ordenar } from '../lib/orden'
+import { EditarPago, type PagoAEditar } from './EditarPago'
 import { Card, EmptyState, ErrorState, Skeleton, StatCard, TableWrap, NombreEntidad } from './ui'
 
 export interface PagoRegistrado {
@@ -81,6 +82,7 @@ function PanelPagosRegistrados({ filas: todos }: { filas: PagoRegistrado[] }) {
   const [pagina, setPagina] = useState(0)
   const [porPagina, setPorPagina] = useState(50)
   const orden = useOrden<Col>('fecha')
+  const [editar, setEditar] = useState<PagoAEditar | null>(null)
 
   const filtrados = useMemo(() => {
     const t = buscar.trim().toLowerCase()
@@ -201,6 +203,7 @@ function PanelPagosRegistrados({ filas: todos }: { filas: PagoRegistrado[] }) {
                   Monto
                 </ThOrden>
                 <ThOrden campo="registrado" orden={orden.orden} onOrden={orden.cambiar}>Registrado</ThOrden>
+                <th className="th" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -242,6 +245,16 @@ function PanelPagosRegistrados({ filas: todos }: { filas: PagoRegistrado[] }) {
                     {p.registrado_por?.split('@')[0] ?? '—'}
                     <span className="block">{dateShort(p.registrado_at)}</span>
                   </td>
+                  <td className="td">
+                    <button type="button" title="Corregir fecha, forma de pago o N° de operación"
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-navy-700"
+                      onClick={() => setEditar({
+                        id: p.payment_id, code: p.code, amount: p.amount, method: p.metodo,
+                        paid_at: p.paid_at, reference: p.reference, notes: p.notes, contraparte: p.contraparte,
+                      })}>
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -252,6 +265,8 @@ function PanelPagosRegistrados({ filas: todos }: { filas: PagoRegistrado[] }) {
           </div>
         </>
       )}
+
+      <EditarPago pago={editar} onClose={() => setEditar(null)} />
     </div>
   )
 }
