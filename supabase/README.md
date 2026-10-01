@@ -56,6 +56,8 @@ Supabase. El historial vive en la tabla `supabase_migrations.schema_migrations` 
 
 | `documento_en_cobranza` | **El mismo ícono en Cobranza.** `v_cuentas_por_cobrar` suma `document_url` al final de sus tres ramas; solo la factura lo trae, porque el pedido interno todavía no se facturó y el saldo inicial es deuda arrastrada sin documento en el sistema. `customer_statement` no se toca: arma la cartola con `to_jsonb(d)` sobre esta misma vista y hereda la columna sola. `portal_get` tampoco, y esa es la diferencia que importa: lista los campos uno por uno, así que el enlace NO viaja al portal del cliente. |
 
+| `gastos_manuales_y_sueldos` + `gastos_manuales_seguridad_y_auditoria` | **Gastos que no pasan por una factura.** `trabajadores` (ficha de cada persona de la planilla, con sueldo pactado; no es una cuenta del sistema), `sueldo_abonos` (cada pago a un trabajador del mes al que corresponde: sueldo final, cotizaciones, quincena, anticipo, bono u otro) y `gastos_manuales` (fijos, variables e insumos/caja chica, con fecha, hora opcional, categoría, forma de pago, lugar y trabajador). Todo editable y borrable desde *Gastos*, con `updated_at` y `audit_row()`. Lee y escribe solo `puede_gastos()`: administración (incluye soporte) y finanzas. Se crean las 8 fichas de la planilla como «Trabajador 1…8» para completar desde la pantalla. |
+
 El archivo `migrations/20260817120000_01_core.sql` está incluido como referencia legible.
 
 ## Sincronizar los archivos locales con la base
