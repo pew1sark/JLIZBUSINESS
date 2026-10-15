@@ -21,19 +21,35 @@ vive en el proyecto Supabase; acá queda la referencia de qué hace cada una.
 
 Se cargan en *Project Settings → Edge Functions → Secrets*. No van al repositorio.
 
-## Limitación conocida: la llamada desde un cron todavía no funciona
+## El tramo de red que hay que tener presente al tocar esto
 
-`bsale-sync` y `bsale-xml` traen en el código una ruta alternativa de
-autorización por `x-cron-secret`, pensada para que un trabajo programado las
-invoque sin sesión de usuario. **Esa ruta hoy no se alcanza**: ambas están
-desplegadas con `verify_jwt: true`, así que Supabase rechaza la petición con
-401 antes de ejecutar el código. Para habilitarla hay que volver a desplegarlas
-con `verify_jwt: false` — la autorización propia que ya tienen (sesión de
-administrador **o** secreto de cron) sigue cerrando la puerta a llamadas
-anónimas.
+Una edge function le habla a su propio proyecto por la **URL pública**: cada
+consulta a la base sale a internet y vuelve a entrar por el gateway. Ese tramo
+pierde peticiones. Medido sobre 24 horas de registros: **51 de 255 llamadas
+—1 de cada 5— volvieron con un 504 instantáneo**, sin llegar a Postgres. La
+base estaba sana y el navegador, que entra por el mismo sitio, no vio ninguno;
+es específico de lo que sale desde una función.
 
-Mientras tanto la sincronización se dispara desde la aplicación, que sí manda
-la sesión: *Configuración → Conexión con Bsale*.
+Una corrida del cron encadena unas veinte llamadas, así que sin reintento casi
+ninguna terminaba: bastaba un 504 en cualquiera de ellas. Y como el error
+aparecía en el punto donde tocaba caer, el mismo problema se reportaba con
+cuatro mensajes distintos —"Al guardar ventas: Gateway Timeout", "Al guardar
+documentos: Gateway Timeout", "Sin conexión activa", "Automatización no
+configurada"—, los tres últimos porque el código miraba `data` sin mirar
+`error` y confundía una llamada caída con una respuesta vacía.
+
+Por eso, **cualquier función que escriba en la base debe**:
+
+1. Pasarle a `createClient` un `fetch` con reintento (`fetchReintentando`, en
+   `bsale-cron` y `bsale-notas-credito`): reintenta 429/5xx/52x hasta cinco
+   veces con espera creciente, y deja pasar tal cual los 4xx de la consulta.
+   Es seguro porque todo lo que escribe la cadena es idempotente.
+2. **Mirar `error`, no solo `data`.** Un problema de red no se puede reportar
+   como un problema de configuración: manda a revisar el lugar equivocado.
+3. Ponerle el id a la fila de `bsale_sync_runs` desde la función
+   (`crypto.randomUUID()`) y cerrarla con `upsert`. Si el insert se pierde, la
+   corrida igual sabe cuál es su fila; antes quedaba en `undefined` y la
+   corrida entera terminaba invisible en la consola de Soporte.
 
 
 ## Qué se sincroniza solo
