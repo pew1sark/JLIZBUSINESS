@@ -54,6 +54,13 @@ export function Historico() {
     },
   })
 
+  // El mes en curso todavía está sumando: no cuenta para el promedio ni para el
+  // mes más bajo, o cada comienzo de mes saldría como el peor del año.
+  const mesActual = useMemo(() => {
+    const hoy = new Date()
+    return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-01`
+  }, [])
+
   const serie = useMemo(
     () =>
       (meses.data ?? []).map((m) => {
@@ -62,9 +69,10 @@ export function Historico() {
           etiqueta: `${MES_CORTO[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(2)}`,
           compras: Number(m.compras),
           documentos: m.documentos,
+          enCurso: m.mes.slice(0, 10) === mesActual,
         }
       }),
-    [meses.data],
+    [meses.data, mesActual],
   )
 
   const totales = useMemo(() => {
@@ -72,13 +80,19 @@ export function Historico() {
     const compras = m.reduce((n, x) => n + Number(x.compras), 0)
     const nc = m.reduce((n, x) => n + Number(x.notas_credito), 0)
     const docs = m.reduce((n, x) => n + x.documentos, 0)
-    // El primer mes suele venir incompleto: se excluye del promedio
-    const completos = m.slice(1)
+    // El primer mes suele venir incompleto y el actual sigue abierto: se excluyen del promedio
+    const completos = m.slice(1).filter((x) => x.mes.slice(0, 10) !== mesActual)
     const promedioMes = completos.length
       ? completos.reduce((n, x) => n + Number(x.compras), 0) / completos.length
       : 0
     return { compras, nc, docs, promedioMes, mesesCompletos: completos.length }
-  }, [meses.data])
+  }, [meses.data, mesActual])
+
+  const ultimaCompra = useMemo(
+    () => (proveedores.data ?? []).reduce<string | null>(
+      (max, p) => (max === null || p.ultima_compra > max ? p.ultima_compra : max), null),
+    [proveedores.data],
+  )
 
   const pareto = useMemo(() => {
     const p = proveedores.data ?? []
@@ -110,7 +124,7 @@ export function Historico() {
     <>
       <PageHeader
         title="Histórico de compras"
-        subtitle="Registro tributario importado · análisis de proveedores y estacionalidad"
+        subtitle={`Compras sincronizadas con Bsale · análisis de proveedores y estacionalidad${ultimaCompra ? ` · al ${dateShort(ultimaCompra)}` : ''}`}
         actions={
           <button onClick={exportar} className="btn-secondary" disabled={sinDatos}>
             Exportar proveedores
@@ -124,7 +138,7 @@ export function Historico() {
         <Card>
           <EmptyState
             title="Sin histórico cargado"
-            hint="Acá se muestra el registro de compras importado desde el SII o desde Bsale."
+            hint="Acá se muestran las compras que llegan desde Bsale y las registradas en el sistema."
             icon={<FileText className="h-8 w-8" />}
           />
         </Card>
@@ -155,11 +169,11 @@ export function Historico() {
                   <Bar dataKey="compras" name="Compras" radius={[4, 4, 0, 0]}>
                     {serie.map((s, i) => {
                       const maxV = Math.max(...serie.map((x) => x.compras))
-                      const minV = Math.min(...serie.slice(1).map((x) => x.compras))
+                      const minV = Math.min(...serie.slice(1).filter((x) => !x.enCurso).map((x) => x.compras))
                       return (
                         <Cell
                           key={i}
-                          fill={s.compras === maxV ? '#0b2545' : s.compras === minV && i > 0 ? '#f59e0b' : '#5b88bd'}
+                          fill={s.compras === maxV ? '#0b2545' : s.enCurso ? '#a5bfdc' : s.compras === minV && i > 0 ? '#f59e0b' : '#5b88bd'}
                         />
                       )
                     })}
@@ -168,8 +182,9 @@ export function Historico() {
               </ResponsiveContainer>
             </div>
             <p className="px-5 pb-4 text-xs text-slate-500">
-              En azul oscuro el mes de mayor compra, en ámbar el más bajo. El primer mes de la serie
-              puede venir incompleto según desde cuándo se exportó el registro.
+              En azul oscuro el mes de mayor compra, en ámbar el más bajo y en celeste el mes en
+              curso, que sigue sumando. El primer mes de la serie puede venir incompleto según desde
+              cuándo se trajo el histórico de Bsale.
             </p>
           </Card>
 
@@ -217,10 +232,11 @@ export function Historico() {
           </Card>
 
           <Card className="mt-4 p-4 text-xs text-slate-500">
-            Este histórico viene del registro tributario, que registra documentos y montos pero no
-            productos ni kilos. Sirve para analizar proveedores, volumen y estacionalidad, pero no
-            para calcular costo por kilo ni márgenes: esos se construyen con las compras que se
-            registren en el sistema de aquí en adelante.
+            Este histórico se arma con las compras del sistema: las que llegan desde Bsale cada 30
+            minutos y las que se registran a mano, así que se mantiene al día solo. Los montos son
+            el total de cada documento con IVA y las notas de crédito restan. Sirve para analizar
+            proveedores, volumen y estacionalidad; el costo por kilo y los márgenes salen del
+            detalle de cada factura, no de esta pantalla.
           </Card>
         </>
       )}
