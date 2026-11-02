@@ -7,6 +7,7 @@ import { PAYMENT_STATUS_LABEL, PAYMENT_STATUS_STYLE } from '../lib/constants'
 import type { PaymentStatus } from '../lib/types'
 import { Modal, Skeleton } from './ui'
 import { CorregirFactura } from './CorregirFactura'
+import { EditarNotaCredito } from './EditarNotaCredito'
 
 const DOC_LABEL: Record<string, string> = {
   factura: 'Factura', boleta: 'Boleta',
@@ -80,6 +81,7 @@ export function DetalleFactura({
 
   const d = doc.data
   const [corrigiendo, setCorrigiendo] = useState(false)
+  const esNota = (d?.doc_type ?? factura?.doc_type) === 'nota_credito'
 
   return (
     <Modal open={!!factura} onClose={onClose} wide
@@ -217,15 +219,24 @@ export function DetalleFactura({
             )}
             {/* Solo las facturas propias se corrigen: un pedido o un saldo
                 inicial no tienen imputaciones que revisar por acá. */}
-            <button type="button" className="btn-secondary w-full sm:w-auto"
-              onClick={() => setCorrigiendo(true)}>
-              <Pencil className="h-4 w-4" /> Corregir el estado o los cobros
-            </button>
+            {esNota ? (
+              <button type="button" className="btn-secondary w-full sm:w-auto"
+                onClick={() => setCorrigiendo(true)}>
+                <Pencil className="h-4 w-4" /> Editar la nota de crédito
+              </button>
+            ) : (
+              <button type="button" className="btn-secondary w-full sm:w-auto"
+                onClick={() => setCorrigiendo(true)}>
+                <Pencil className="h-4 w-4" /> Corregir el estado o los cobros
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      <CorregirFactura invoiceId={corrigiendo ? (factura?.id ?? null) : null}
+      <CorregirFactura invoiceId={corrigiendo && !esNota ? (factura?.id ?? null) : null}
+        onClose={() => setCorrigiendo(false)} />
+      <EditarNotaCredito notaId={corrigiendo && esNota ? (factura?.id ?? null) : null}
         onClose={() => setCorrigiendo(false)} />
     </Modal>
   )
